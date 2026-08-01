@@ -833,7 +833,8 @@
           <div>
             <label for="excelFile">Arquivo Excel</label>
             <input id="excelFile" type="file" accept=".xlsx,.xls">
-            <div class="help">A primeira linha deve conter os nomes das colunas.</div>
+            <div id="defaultDatasetInfo" class="help">Carregando automaticamente o arquivo Dataset_A.xlsx...</div>
+            <div class="help">Para usar outra base, selecione um arquivo acima. A primeira linha deve conter os nomes das colunas.</div>
           </div>
 
           <div>
@@ -1047,6 +1048,8 @@
   const MAP_OUTSIDE_TREATMENT_COLOR = '#dfe3e6';
   const MAP_FILTERED_COLOR = '#f0f2f4';
   const PLOT_CONFIG = { responsive: true, displaylogo: false, toImageButtonOptions: { format: 'png', scale: 2 } };
+  const DEFAULT_DATASET_URL = './Dataset_A.xlsx';
+  const DEFAULT_DATASET_NAME = 'Dataset_A.xlsx';
   const IBGE_MUNICIPAL_MESH_URL = 'https://servicodados.ibge.gov.br/api/v4/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application%2Fvnd.geo%2Bjson';
   const IBGE_MUNICIPALITIES_URL = 'https://servicodados.ibge.gov.br/api/v1/localidades/municipios';
   const MUNICIPAL_GEOJSON_FALLBACK_URL = 'https://cdn.jsdelivr.net/gh/henriquemalvar/br-geojson@main/dist/municipios/all.geojson';
@@ -1096,6 +1099,7 @@
 
   const el = id => document.getElementById(id);
   const excelFile = el('excelFile');
+  const defaultDatasetInfo = el('defaultDatasetInfo');
   const sheetSelect = el('sheetSelect');
   const variablesBox = el('variablesBox');
   const runButton = el('runButton');
@@ -1139,6 +1143,7 @@
   linkedTableNext.addEventListener('click', () => changeLinkedTablePage(1));
 
   loadBuiltInMunicipalGeoJSON();
+  loadDefaultDataset();
 
   function showStatus(message, percent = 0, type = 'normal') {
     statusBox.style.display = 'block';
@@ -1165,30 +1170,74 @@
     }
 
     try {
-      showStatus('Lendo o arquivo Excel...', 5);
-      state.inputFileName = file.name.replace(/\.(xlsx|xls)$/i, '');
+      showStatus('Lendo o arquivo Excel selecionado...', 5);
       const buffer = await file.arrayBuffer();
-      state.workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-      sheetSelect.innerHTML = '';
-      state.workbook.SheetNames.forEach(name => {
-        const option = document.createElement('option');
-        option.value = name;
-        option.textContent = name;
-        sheetSelect.appendChild(option);
-      });
-      sheetSelect.disabled = false;
-      loadSelectedSheet();
-      const marcadas = state.numericColumns.length - state.identifierColumns.length;
-      showStatus(
-        `Arquivo carregado. ${state.numericColumns.length} coluna(s) numérica(s) encontrada(s); ${marcadas} marcada(s) como indicadores. `
-        + (state.identifierColumns.length
-          ? `${state.identifierColumns.length} coluna(s) de código, identificação ou coordenada ficaram desmarcadas para não dominarem a distância euclidiana.`
-          : 'Nenhuma coluna de código ou identificação foi detectada.'),
-        100, 'success');
+      loadWorkbookFromBuffer(buffer, file.name, false);
     } catch (error) {
       console.error(error);
-      showStatus(`Não foi possível ler o arquivo: ${error.message}`, 0, 'error');
+      showStatus(`Não foi possível ler o arquivo selecionado: ${error.message}`, 0, 'error');
     }
+  }
+
+  async function loadDefaultDataset() {
+    if (typeof XLSX === 'undefined') {
+      defaultDatasetInfo.textContent = 'O dataset modelo não pôde ser carregado porque a biblioteca de Excel está indisponível.';
+      showStatus('A biblioteca de leitura do Excel não foi carregada. Verifique a conexão com a internet e reabra o sistema.', 0, 'error');
+      return;
+    }
+
+    try {
+      showStatus(`Carregando o dataset modelo ${DEFAULT_DATASET_NAME}...`, 5);
+      defaultDatasetInfo.textContent = `Carregando automaticamente o arquivo ${DEFAULT_DATASET_NAME}...`;
+
+      const response = await fetch(DEFAULT_DATASET_URL, { cache: 'no-cache' });
+      if (!response.ok) {
+        throw new Error(`falha HTTP ${response.status}`);
+      }
+
+      const buffer = await response.arrayBuffer();
+      loadWorkbookFromBuffer(buffer, DEFAULT_DATASET_NAME, true);
+    } catch (error) {
+      console.error('Falha ao carregar o dataset modelo.', error);
+      defaultDatasetInfo.textContent = `Não foi possível carregar ${DEFAULT_DATASET_NAME} automaticamente. Selecione um arquivo manualmente.`;
+      showStatus(
+        `Não foi possível carregar o dataset modelo ${DEFAULT_DATASET_NAME}. Verifique se ele está na mesma pasta do index.html ou selecione um arquivo manualmente.`,
+        0,
+        'error'
+      );
+    }
+  }
+
+  function loadWorkbookFromBuffer(buffer, fileName, isDefaultDataset) {
+    state.inputFileName = String(fileName || 'dataset').replace(/\.(xlsx|xls)$/i, '');
+    state.workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+
+    sheetSelect.innerHTML = '';
+    state.workbook.SheetNames.forEach(name => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      sheetSelect.appendChild(option);
+    });
+
+    sheetSelect.disabled = false;
+    loadSelectedSheet();
+
+    const marcadas = state.numericColumns.length - state.identifierColumns.length;
+    const origem = isDefaultDataset ? 'Dataset modelo carregado automaticamente' : 'Arquivo selecionado carregado';
+
+    defaultDatasetInfo.textContent = isDefaultDataset
+      ? `${DEFAULT_DATASET_NAME} carregado automaticamente. Para usar outra base, selecione um arquivo acima.`
+      : `${fileName} carregado. O arquivo selecionado substituiu o dataset modelo nesta sessão.`;
+
+    showStatus(
+      `${origem}. ${state.numericColumns.length} coluna(s) numérica(s) encontrada(s); ${marcadas} marcada(s) como indicadores. `
+      + (state.identifierColumns.length
+        ? `${state.identifierColumns.length} coluna(s) de código, identificação ou coordenada ficaram desmarcadas para não dominarem a distância euclidiana.`
+        : 'Nenhuma coluna de código ou identificação foi detectada.'),
+      100,
+      'success'
+    );
   }
 
   function loadSelectedSheet() {
