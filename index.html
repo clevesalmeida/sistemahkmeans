@@ -1704,6 +1704,162 @@
     };
   }
 
+  async function runAnalysis() {
+    try {
+      if (!state.rows.length) throw new Error('Carregue uma planilha Excel.');
+      if (typeof Plotly === 'undefined') throw new Error('A biblioteca de gráficos não foi carregada. Verifique a conexão com a internet.');
+
+      const selectedFeatures = Array.from(variablesBox.querySelectorAll('input[type="checkbox"]:checked')).map(input => input.dataset.column);
+      if (selectedFeatures.length < 2) throw new Error('Selecione pelo menos duas variáveis numéricas.');
+
+      const requestedK = parseInt(el('clusterCount').value, 10);
+      let maxK = parseInt(el('maxK').value, 10);
+      const parsedSeed = parseInt(el('seed').value, 10);
+      const seed = Number.isInteger(parsedSeed) ? parsedSeed : 790;
+
+      if (!Number.isInteger(requestedK) || requestedK < 2) {
+        throw new Error('Informe um número de clusters igual ou superior a 2.');
+      }
+
+      maxK = Math.max(requestedK, Math.min(20, Number.isInteger(maxK) ? maxK : 15));
+
+      state.selectedFeatures = selectedFeatures;
+      state.results = {};
+      state.tableFiltersByTreatment = {};
+      state.tablePageByTreatment = {};
+      runButton.disabled = true;
+      exportButton.disabled = true;
+      el('results').style.display = 'none';
+      showStatus('Preparando os dados...', 2);
+      await yieldUI();
+
+      const prepared = prepareBaseData(state.rows, selectedFeatures);
+      if (prepared.matrix.length <= requestedK) {
+        throw new Error(`Há apenas ${prepared.matrix.length} linhas completas. O número de clusters deve ser menor que a quantidade de linhas válidas.`);
+      }
+
+      const treatments = createTreatments(prepared.matrix, prepared.rowIndices, selectedFeatures);
+      const totalSteps = TREATMENTS.length;
+
+      for (let t = 0; t < TREATMENTS.length; t++) {
+        const descriptor = TREATMENTS[t];
+        const data = treatments[descriptor.key];
+        const basePercent = 5 + (t / totalSteps) * 90;
+
+        showStatus(`Processando ${descriptor.name}: normalização MinMax e K-means compatível...`, basePercent);
+        await yieldUI();
+
+        if (!data || data.matrix.length <= requestedK) {
+          state.results[descriptor.key] = {
+            descriptor,
+            skipped: true,
+            reason: `Quantidade insuficiente de linhas após o tratamento: ${data ? data.matrix.length : 0}.`
+          };
+          continue;
+        }
+
+        // displayMatrix preserva a escala que entrou no Visual Clustering.
+        // modelMatrix recebe a normalização MinMax interna usada nas distâncias.
+        const displayMatrix = data.matrix.map(row => row.slice());
+        const finalScaling = APPLY_FINAL_MINMAX_BEFORE_KMEANS
+          ? applyFinalMinMax(displayMatrix)
+          : { matrix: displayMatrix.map(row => row.slice()), mins: [], maxs: [] };
+        const modelMatrix = finalScaling.matrix;
+        const diagnosticMaxK = Math.min(maxK, modelMatrix.length - 1);
+
+        // O Visual Clustering usado nos arquivos fornecidos equivale a:
+        // KMeans(k, init='k-means++', n_init=1, random_state=790,
+        //        max_iter=300, tol=1e-4, algorithm='lloyd').
+        const rawFinalFit = kmeans(modelMatrix, requestedK, {
+          seed,
+          maxIter: FINAL_MAX_ITER,
+          tolerance: KMEANS_TOLERANCE
+        });
+
+        // O site renumera os clusters pelo ranking médio dos centroides
+        // normalizados, do maior escore para o menor.
+        const finalFit = canonicalizeKMeans(rawFinalFit);
+
+        const diagnostics = await computeDiagnostics(
+          modelMatrix,
+          diagnosticMaxK,
+          seed,
+          {
+            k: requestedK,
+            fit: finalFit,
+            exactCurve: el('exactSilhouetteCurve').checked
+          },
+          (k, max, message) => {
+            const local = k / max;
+            showStatus(
+              `Processando ${descriptor.name}: ${message || `diagnóstico k=${k} de ${max}`}...`,
+              basePercent + local * (90 / totalSteps) * 0.72
+            );
+          }
+        );
+
+        // O Visual Clustering exporta e apresenta os centroides na escala
+        // original do arquivo importado, apesar de clusterizar em MinMax.
+        const displayCentroids = computeCentroidsForLabels(
+          displayMatrix,
+          finalFit.labels,
+          requestedK
+        );
+
+        const pca = computePCA(displayMatrix, displayCentroids);
+        const clusterSizes = Array(requestedK).fill(0);
+        finalFit.labels.forEach(label => clusterSizes[label]++);
+
+        state.results[descriptor.key] = {
+          descriptor,
+          skipped: false,
+          matrix: displayMatrix,
+          modelMatrix,
+          rowIndices: data.rowIndices,
+          metadata: {
+            ...data.metadata,
+            finalMinMaxApplied: APPLY_FINAL_MINMAX_BEFORE_KMEANS,
+            finalMinMaxMins: finalScaling.mins,
+            finalMinMaxMaxs: finalScaling.maxs,
+            pipeline: `${descriptor.name} → MinMax interno → K-means compatível`
+          },
+          labels: finalFit.labels,
+          centroids: displayCentroids,
+          modelCentroids: finalFit.centroids,
+          rankingScores: finalFit.rankingScores,
+          sse: finalFit.sse,
+          clusterSizes,
+          emptyClusters: clusterSizes.filter(size => size === 0).length,
+          diagnostics,
+          pca,
+          requestedK,
+          sourceRows: prepared.matrix.length,
+          validRows: modelMatrix.length,
+          removedRows: prepared.matrix.length - data.matrix.length,
+          missingRows: prepared.missingRows,
+          features: selectedFeatures
+        };
+
+        await yieldUI();
+      }
+
+      state.activeTreatment = TREATMENTS.find(t => state.results[t.key] && !state.results[t.key].skipped)?.key || 'raw';
+      state.activeClusters = new Set(Array.from({ length: requestedK }, (_, cluster) => cluster));
+      buildTabs();
+      buildClusterVisibilityControls(requestedK);
+      renderActiveTreatment();
+      el('results').style.display = 'block';
+      exportButton.disabled = false;
+      showStatus('Clusterização concluída com os parâmetros compatíveis com o Visual Clustering.', 100, 'success');
+      el('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      console.error(error);
+      showStatus(error.message || 'Ocorreu um erro durante a clusterização.', 0, 'error');
+    } finally {
+      runButton.disabled = false;
+    }
+  }
+
   function prepareBaseData(rows, features) {
     const matrix = [];
     const rowIndices = [];
