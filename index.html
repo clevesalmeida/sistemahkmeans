@@ -1199,9 +1199,9 @@
       loadWorkbookFromBuffer(buffer, DEFAULT_DATASET_NAME, true);
     } catch (error) {
       console.error('Falha ao carregar o dataset modelo.', error);
-      defaultDatasetInfo.textContent = `Não foi possível carregar ${DEFAULT_DATASET_NAME} automaticamente. Selecione um arquivo manualmente.`;
+      defaultDatasetInfo.textContent = `Não foi possível carregar Dataset_A_Base_MMGD.xlsx automaticamente. Selecione um arquivo manualmente.`;
       showStatus(
-        `Não foi possível carregar o dataset modelo ${DEFAULT_DATASET_NAME}. Verifique se ele está na mesma pasta do index.html ou selecione um arquivo manualmente.`,
+        `Não foi possível carregar o dataset modelo Dataset_A_Base_MMGD.xlsx. Verifique se ele está na mesma pasta do index.html ou selecione um arquivo manualmente.`,
         0,
         'error'
       );
@@ -1227,7 +1227,7 @@
     const origem = isDefaultDataset ? 'Dataset modelo carregado automaticamente' : 'Arquivo selecionado carregado';
 
     defaultDatasetInfo.textContent = isDefaultDataset
-      ? `${DEFAULT_DATASET_NAME} carregado automaticamente. Para usar outra base, selecione um arquivo acima.`
+      ? `Dataset_A_Base_MMGD.xlsx carregado automaticamente. Para usar outra base, selecione um arquivo acima.`
       : `${fileName} carregado. O arquivo selecionado substituiu o dataset modelo nesta sessão.`;
 
     showStatus(
