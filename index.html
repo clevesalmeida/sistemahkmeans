@@ -614,9 +614,7 @@
     }
 
     .linked-data-table th:first-child,
-    .linked-data-table td:first-child,
-    .linked-data-table th:nth-child(2),
-    .linked-data-table td:nth-child(2) {
+    .linked-data-table td:first-child {
       text-align: left;
     }
 
@@ -844,7 +842,7 @@
 
           <div>
             <label class="checkbox-field" for="exactSilhouetteCurve">
-              <input id="exactSilhouetteCurve" type="checkbox" checked>
+              <input id="exactSilhouetteCurve" type="checkbox">
               Curva silhouette exata
             </label>
             <div class="help">Marcada: usa a base completa em todos os valores de k.<br>Desmarcada: usa amostra estratificada para acelerar o processamento.</div>
@@ -2991,18 +2989,23 @@
         type: 'text',
         getValue: record => record.municipality || record.identifier || 'Não associado'
       });
-      columns.push({
-        key: '__uf',
-        label: 'UF',
-        type: 'text',
-        getValue: record => record.uf || ''
-      });
     } else {
       columns.push({
         key: '__identifier',
         label: identifierCol || 'Linha no Excel',
         type: 'text',
         getValue: record => record.identifier
+      });
+    }
+
+    // Quando a planilha possui uma coluna de UF selecionada, ela é exibida
+    // imediatamente após a identificação do município ou da linha.
+    if (ufCol) {
+      columns.push({
+        key: '__uf',
+        label: 'UF',
+        type: 'text',
+        getValue: record => record.uf || 'Não informado'
       });
     }
 
@@ -3153,8 +3156,12 @@
     const activeClusterText = `${state.activeClusters.size} de ${result.requestedK} clusters ativos`;
     const filterText = filterState.hasColumnFilters ? 'com filtros de coluna' : 'sem filtros de coluna';
     const geographyText = model.hasMapData
-      ? 'Município e UF obtidos da malha municipal associada'
-      : `Primeira coluna: ${model.columns[0].label}`;
+      ? (ufColumn.value
+          ? 'Município obtido da malha municipal associada; UF exibida na segunda coluna'
+          : 'Município obtido da malha municipal associada')
+      : (ufColumn.value
+          ? `Primeira coluna: ${model.columns[0].label}; UF exibida na segunda coluna`
+          : `Primeira coluna: ${model.columns[0].label}`);
 
     linkedTableSummary.textContent =
       `${indices.length.toLocaleString('pt-BR')} de ${model.records.length.toLocaleString('pt-BR')} observações exibidas; ${activeClusterText}; ${filterText}. ${geographyText}. Valores na escala do tratamento selecionado.`;
@@ -4499,7 +4506,7 @@
     );
 
     notes.push(
-      `A tabela ao lado do mapa permite filtrar Município, UF e todas as variáveis selecionadas. Os filtros são aplicados simultaneamente à projeção fatorial, ao perfil médio e ao mapa.`
+      `A tabela ao lado do mapa permite filtrar Município e todas as variáveis selecionadas. Os filtros são aplicados simultaneamente à projeção fatorial, ao perfil médio e ao mapa.`
     );
 
     notes.push(
