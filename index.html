@@ -1,0 +1,4333 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Clusterização K-means</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #64748b;
+      --line: #dbe3ee;
+      --primary: #155eef;
+      --primary-dark: #0d46bd;
+      --success: #087a55;
+      --warning: #9a6700;
+      --danger: #b42318;
+      --shadow: 0 12px 34px rgba(30, 55, 90, 0.10);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    header {
+      background: linear-gradient(135deg, #2f2f2f 0%, #000000 100%);
+      color: #fff;
+      padding: 28px 24px;
+      box-shadow: var(--shadow);
+    }
+
+    header .wrap, main {
+      max-width: 1500px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: clamp(24px, 3vw, 36px);
+      letter-spacing: -0.02em;
+    }
+
+    header p {
+      margin: 0;
+      opacity: 0.88;
+      max-width: 940px;
+      line-height: 1.5;
+    }
+
+    main {
+      padding: 24px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .panel h2, .panel h3 {
+      margin-top: 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .col-2 { grid-column: span 2; }
+    .col-3 { grid-column: span 3; }
+    .col-4 { grid-column: span 4; }
+    .col-6 { grid-column: span 6; }
+    .col-8 { grid-column: span 8; }
+    .col-12 { grid-column: span 12; }
+
+    label {
+      display: block;
+      font-weight: 650;
+      font-size: 13px;
+      margin-bottom: 7px;
+    }
+
+    input, select, button {
+      font: inherit;
+    }
+
+    input[type="file"], input[type="number"], select {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 9px;
+      padding: 10px 11px;
+      background: #fff;
+      color: var(--text);
+    }
+
+    .panel > .grid > .col-2 .help,
+    .panel > .grid > .col-3 .help {
+      min-height: 17px;
+    }
+
+
+    /* Linha única de configuração: arquivo, planilha, parâmetros e a opção da
+       curva exata lado a lado, com o arquivo um pouco mais largo. */
+    .config-row {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1.7fr) minmax(0, 2.2fr) minmax(0, 2.2fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .config-row .checkbox-field {
+      margin-top: 26px;
+    }
+
+    .checkbox-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .checkbox-field input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      margin: 0;
+      accent-color: var(--primary);
+    }
+
+    input:focus, select:focus {
+      outline: 3px solid rgba(21, 94, 239, 0.14);
+      border-color: var(--primary);
+    }
+
+    button {
+      border: 0;
+      border-radius: 9px;
+      padding: 11px 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .12s ease, background .12s ease, opacity .12s ease;
+    }
+
+    button:hover:not(:disabled) { transform: translateY(-1px); }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+    .btn-secondary { background: #e8eef8; color: #17315f; }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: end;
+    }
+
+    .help {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .variables-box {
+      max-height: min(52vh, 470px);
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfdff;
+    }
+
+    .variable-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 5px;
+      border-bottom: 1px solid #edf1f6;
+    }
+
+    .variable-item:last-child { border-bottom: 0; }
+    .variable-item label { margin: 0; font-weight: 500; cursor: pointer; }
+    .variable-item.identifier label { color: #7a5a00; }
+
+    .identifier-tag {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: #fdf3d8;
+      border: 1px solid #f0d79a;
+      color: #7a5a00;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .variable-warning {
+      margin-bottom: 9px;
+      border: 1px solid #f1d59b;
+      background: #fffaf0;
+      color: #6e4f00;
+      padding: 9px 10px;
+      border-radius: 9px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .inline-tools {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 9px;
+      flex-wrap: wrap;
+    }
+
+    .inline-tools button {
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+
+    .normalization-notice {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+      border: 1px solid #b9cff7;
+      border-radius: 10px;
+      padding: 11px 12px;
+      background: #f4f7ff;
+      color: #234b8b;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .normalization-notice strong {
+      flex: 0 0 auto;
+      font-size: 13px;
+    }
+
+    .method-cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .method-card {
+      border: 1px solid var(--line);
+      background: #fbfdff;
+      border-radius: 10px;
+      padding: 11px;
+      font-size: 12px;
+      line-height: 1.42;
+    }
+
+    .method-card strong { display: block; margin-bottom: 4px; font-size: 13px; }
+
+    .status {
+      display: none;
+      margin-top: 16px;
+      border-radius: 10px;
+      padding: 12px;
+      background: #eef4ff;
+      border: 1px solid #bfd3ff;
+      color: #17315f;
+    }
+
+    .status.error {
+      display: block;
+      background: #fff1f0;
+      border-color: #ffc9c4;
+      color: var(--danger);
+    }
+
+    .status.success {
+      display: block;
+      background: #ecfdf3;
+      border-color: #a7e6c8;
+      color: var(--success);
+    }
+
+    .progress-track {
+      height: 8px;
+      margin-top: 9px;
+      border-radius: 999px;
+      background: #dbe7ff;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      width: 0;
+      height: 100%;
+      background: var(--primary);
+      transition: width .2s ease;
+    }
+
+    #results { display: none; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 13px;
+      background: #fbfdff;
+    }
+
+    .metric .value {
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 3px;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      margin-bottom: 14px;
+    }
+
+    .tab-btn {
+      white-space: nowrap;
+      background: #e9eef6;
+      color: #31415f;
+      padding: 9px 12px;
+    }
+
+    .tab-btn.active {
+      background: var(--primary);
+      color: white;
+    }
+
+    .result-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .result-head h2 { margin-bottom: 4px; }
+    .result-head p { margin: 0; color: var(--muted); }
+
+    .cluster-visibility-panel {
+      grid-column: 1 / -1;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fbfdff;
+      padding: 13px 14px;
+      margin-bottom: 0;
+    }
+
+    .cluster-visibility-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .cluster-visibility-title {
+      font-weight: 750;
+      font-size: 14px;
+      margin-bottom: 3px;
+    }
+
+    .cluster-visibility-summary {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .cluster-visibility-actions {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+
+    .cluster-visibility-actions button {
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+
+    .cluster-visibility-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .cluster-visibility-extra {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      margin-left: 8px;
+      border: 1px dashed #d4dbe7;
+      border-radius: 999px;
+      background: #ffffff;
+      font-size: 12px;
+      font-weight: 600;
+      color: #24364d;
+    }
+
+    .cluster-visibility-extra input {
+      margin: 0;
+      accent-color: var(--primary);
+    }
+
+    .cluster-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 10px;
+      background: #ffffff;
+      cursor: pointer;
+      user-select: none;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .cluster-toggle input {
+      margin: 0;
+      accent-color: var(--primary);
+    }
+
+    .cluster-toggle-swatch {
+      width: 15px;
+      height: 15px;
+      border-radius: 4px;
+      flex: 0 0 15px;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      max-height: 420px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      background: #fff;
+    }
+
+    th, td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #e8edf4;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    th:first-child, td:first-child { text-align: left; }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #edf3fb;
+      color: #20365b;
+    }
+
+    .chart-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .chart-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      min-height: 410px;
+      overflow: hidden;
+    }
+
+    .chart-card.full { grid-column: 1 / -1; }
+
+    .chart-title {
+      padding: 12px 14px 0;
+      font-weight: 750;
+      font-size: 14px;
+    }
+
+    .chart {
+      width: 100%;
+      height: 380px;
+    }
+
+    /* Espaço adicional para a legenda, os picos e os rótulos longos do perfil. */
+    .factor-chart-card {
+      min-height: 470px;
+    }
+
+    .factor-chart-card .chart {
+      height: 430px;
+    }
+
+    .centroid-profile-card {
+      min-height: 470px;
+    }
+
+    .centroid-profile-card .chart {
+      height: 430px;
+    }
+
+    .map-table-grid {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .map-table-grid > * {
+      min-width: 0;
+    }
+
+    .map-panel-card,
+    .linked-table-card {
+      min-height: 710px;
+    }
+
+    .map-chart {
+      height: 650px;
+    }
+
+    .linked-table-card {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .linked-table-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding-right: 12px;
+    }
+
+    .linked-table-title {
+      padding-bottom: 3px;
+    }
+
+    .linked-table-summary {
+      padding: 0 14px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .linked-table-clear {
+      margin-top: 10px;
+      padding: 7px 10px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .linked-table-wrap {
+      flex: 1;
+      min-height: 0;
+      max-height: 600px;
+      overflow: auto;
+      margin: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .linked-data-table {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+
+    .linked-data-table th,
+    .linked-data-table td {
+      padding: 7px 8px;
+      border-bottom: 1px solid #e8edf4;
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    .linked-data-table th:first-child,
+    .linked-data-table td:first-child,
+    .linked-data-table th:nth-child(2),
+    .linked-data-table td:nth-child(2) {
+      text-align: left;
+    }
+
+    .linked-data-table thead tr.column-row th {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      background: #edf3fb;
+      color: #20365b;
+    }
+
+    .linked-data-table thead tr.filter-row th {
+      position: sticky;
+      top: 32px;
+      z-index: 3;
+      padding: 5px;
+      background: #f7f9fc;
+    }
+
+    .linked-data-table .column-filter {
+      width: 100%;
+      min-width: 105px;
+      padding: 6px 7px;
+      border: 1px solid #cfd9e8;
+      border-radius: 7px;
+      font-size: 11px;
+      background: #fff;
+    }
+
+    .linked-data-table tbody tr {
+      border-left: 4px solid transparent;
+    }
+
+    .linked-data-table tbody tr:hover {
+      background: #f4f7fb;
+    }
+
+    .linked-table-footer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      min-height: 52px;
+      padding: 8px 12px 11px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .linked-table-footer button {
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+
+    .linked-table-empty {
+      padding: 28px 18px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .map-message {
+      height: 590px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: var(--muted);
+      padding: 30px;
+      line-height: 1.6;
+    }
+
+    .map-source-status {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.4;
+      background: #f8fafc;
+      color: var(--muted);
+    }
+
+    .map-source-status.loading {
+      border-color: #c7d7f5;
+      background: #f4f7ff;
+      color: #234b8b;
+    }
+
+    .map-source-status.success {
+      border-color: #a9ddca;
+      background: #f1fbf7;
+      color: var(--success);
+    }
+
+    .map-source-status.error {
+      border-color: #f1b8b3;
+      background: #fff5f4;
+      color: var(--danger);
+    }
+
+
+    .map-config-panel {
+      min-width: 0;
+    }
+
+    .map-config-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px 14px;
+      align-items: start;
+    }
+
+    .map-config-field {
+      min-width: 0;
+    }
+
+    .map-config-field.full {
+      grid-column: 1 / -1;
+    }
+
+    .map-config-field select,
+    .map-config-field input {
+      min-width: 0;
+    }
+
+    .map-stats {
+      min-height: 38px;
+      padding: 0 14px 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .notes {
+      margin-top: 14px;
+      border: 1px solid #f1d59b;
+      background: #fffaf0;
+      color: #6e4f00;
+      padding: 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #eaf0fa;
+      color: #274266;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    @media (max-width: 1050px) {
+      .col-2, .col-3, .col-4, .col-6, .col-8 { grid-column: span 6; }
+      .config-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .config-row > div:first-child { grid-column: 1 / -1; }
+      .method-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .map-table-grid { grid-template-columns: 1fr; }
+      .linked-table-wrap { max-height: 560px; }
+    }
+
+    @media (max-width: 720px) {
+      main { padding: 14px; }
+      .config-row { grid-template-columns: 1fr; }
+      .config-row > div:first-child { grid-column: auto; }
+      .config-row .checkbox-field { margin-top: 0; }
+      .map-config-grid { grid-template-columns: 1fr; }
+      .map-config-field.full { grid-column: auto; }
+      header { padding: 22px 16px; }
+      .col-2, .col-3, .col-4, .col-6, .col-8, .col-12 { grid-column: 1 / -1; }
+      .method-cards, .summary-grid, .chart-grid { grid-template-columns: 1fr; }
+      .chart-card.full { grid-column: auto; }
+      .map-table-grid { grid-template-columns: 1fr; }
+      .chart { height: 340px; }
+      .map-chart { height: 500px; }
+      .map-message { height: 490px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Sistema de Clusterização K-means</h1>
+      <p>Importe uma planilha Excel, escolha as variáveis e o número de clusters. O sistema aplica MinMax internamente e reproduz os parâmetros, o ranking e as curvas exatas observados nos resultados do Visual Clustering usados na dissertação.</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>1. Configuração</h2>
+      <div class="grid">
+        <div class="config-row">
+          <div>
+            <label for="excelFile">Arquivo Excel</label>
+            <input id="excelFile" type="file" accept=".xlsx,.xls">
+            <div class="help">A primeira linha deve conter os nomes das colunas.</div>
+          </div>
+
+          <div>
+            <label for="sheetSelect">Planilha</label>
+            <select id="sheetSelect" disabled></select>
+          </div>
+
+          <div>
+            <label for="clusterCount">Número de clusters</label>
+            <input id="clusterCount" type="number" min="2" max="30" value="4">
+          </div>
+
+          <div>
+            <label for="seed">Semente aleatória</label>
+            <input id="seed" type="number" value="790">
+            <div class="help">Resultados reproduzíveis.</div>
+          </div>
+
+          <div>
+            <label for="maxK">Máximo de k no diagnóstico</label>
+            <input id="maxK" type="number" min="2" max="20" value="15">
+            <div class="help">Usado nas curvas do joelho e silhouette.</div>
+          </div>
+
+          <div>
+            <label class="checkbox-field" for="exactSilhouetteCurve">
+              <input id="exactSilhouetteCurve" type="checkbox" checked disabled>
+              Curva silhouette exata
+            </label>
+            <div class="help">Sempre ativa no modo compatível.<br>Calculada na base completa para todos os valores de k.</div>
+          </div>
+        </div>
+
+        <div class="col-6">
+          <label>Variáveis usadas na clusterização</label>
+          <div class="inline-tools">
+            <button id="selectIndicators" class="btn-secondary" type="button" disabled>Somente indicadores</button>
+            <button id="selectAll" class="btn-secondary" type="button" disabled>Selecionar todas</button>
+            <button id="clearAll" class="btn-secondary" type="button" disabled>Limpar seleção</button>
+          </div>
+          <div id="variablesBox" class="variables-box">
+            <div class="help">Carregue uma planilha para listar as colunas numéricas.</div>
+          </div>
+        </div>
+
+        <div class="col-6 map-config-panel">
+          <label>Identificação e mapa municipal</label>
+          <div class="map-config-grid">
+            <div class="map-config-field">
+              <label for="labelColumn">Coluna do município</label>
+              <select id="labelColumn" disabled></select>
+              <div class="help">Campo principal para associar cada linha ao nome do município no mapa.</div>
+            </div>
+
+            <div class="map-config-field">
+              <label for="ufColumn">Coluna da UF</label>
+              <select id="ufColumn" disabled></select>
+              <div class="help">Recomendada para diferenciar municípios homônimos.</div>
+            </div>
+
+            <div class="map-config-field">
+              <label for="codeColumn">Código IBGE opcional</label>
+              <select id="codeColumn" disabled></select>
+              <div class="help">Usado como alternativa quando o nome não puder ser associado.</div>
+            </div>
+
+            <div class="map-config-field">
+              <label for="rowIdentifierColumn">Variável de texto que identifica as linhas</label>
+              <select id="rowIdentifierColumn" disabled></select>
+              <div class="help">Usada para identificar cada observação ao passar o mouse nos gráficos.</div>
+            </div>
+
+            <div class="map-config-field">
+              <label for="latColumn">Latitude opcional</label>
+              <select id="latColumn" disabled></select>
+            </div>
+
+            <div class="map-config-field">
+              <label for="lonColumn">Longitude opcional</label>
+              <select id="lonColumn" disabled></select>
+            </div>
+            <div class="map-config-field full">
+              <label>Malha municipal do IBGE</label>
+              <div id="geojsonStatus" class="map-source-status loading">Carregando a malha municipal automaticamente...</div>
+              <div class="help">As geometrias e os nomes municipais são carregados automaticamente. Não é necessário selecionar um arquivo GeoJSON.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="normalization-notice">
+            <strong>Compatibilidade com o Visual Clustering</strong>
+            <span>Após cada tratamento específico, o sistema aplica MinMax às variáveis antes do K-means, da curva do Joelho e da curva Silhouette. Os centroides, a projeção fatorial, a tabela e a exportação permanecem na escala do conjunto de dados importado ou do tratamento selecionado, como ocorre no Visual Clustering.</span>
+          </div>
+          <div class="method-cards">
+            <div class="method-card"><strong>Dados sem tratamento específico</strong>Usa os valores originais e aplica MinMax final antes do K-means.</div>
+            <div class="method-card"><strong>Sem outliers</strong>Remove as linhas pelo IQR e aplica MinMax final à base restante.</div>
+            <div class="method-card"><strong>MinMax</strong>Aplica MinMax no tratamento e reaplica MinMax antes do K-means.</div>
+            <div class="method-card"><strong>Transformação logarítmica</strong>Aplica ln(1+x) e, em seguida, MinMax final antes do K-means.</div>
+            <div class="method-card"><strong>Winsorização</strong>Limita os valores aos percentis 1% e 99% e aplica MinMax final.</div>
+            <div class="method-card"><strong>Z-score</strong>Aplica Z-score e, em seguida, MinMax final antes do K-means.</div>
+          </div>
+        </div>
+
+        <div class="col-12 actions">
+          <button id="runButton" class="btn-primary" type="button" disabled>Iniciar clusterização</button>
+          <button id="exportButton" class="btn-secondary" type="button" disabled>Exportar resultados para Excel</button>
+        </div>
+      </div>
+
+      <div id="status" class="status">
+        <div id="statusText"></div>
+        <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+      </div>
+    </section>
+
+    <section id="results" class="panel">
+      <div class="result-head">
+        <div>
+          <h2>2. Resultados</h2>
+          <p id="resultSubtitle"></p>
+        </div>
+        <span id="methodBadge" class="pill"></span>
+      </div>
+
+      <div id="summaryGrid" class="summary-grid"></div>
+      <div id="tabs" class="tabs"></div>
+
+      <div class="chart-card full" style="min-height: auto; margin-bottom: 16px;">
+        <div class="chart-title">Tabela de centroides</div>
+        <div id="centroidTable" class="table-wrap"></div>
+      </div>
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-title">Curva do joelho</div>
+          <div id="elbowChart" class="chart"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Curva silhouette</div>
+          <div id="silhouetteChart" class="chart"></div>
+        </div>
+
+        <div id="clusterVisibilityPanel" class="cluster-visibility-panel" hidden></div>
+
+        <div class="chart-card factor-chart-card">
+          <div class="chart-title">Projeção nos fatores principais</div>
+          <div id="factorChart" class="chart"></div>
+        </div>
+        <div class="chart-card centroid-profile-card">
+          <div id="lineChartTitle" class="chart-title">Perfil dos centroides</div>
+          <div id="lineChart" class="chart"></div>
+        </div>
+        <div class="map-table-grid">
+          <div class="chart-card map-panel-card">
+            <div class="chart-title">Mapa dos clusters</div>
+            <div id="mapChart" class="chart map-chart"></div>
+            <div id="mapStats" class="map-stats"></div>
+          </div>
+
+          <div class="chart-card linked-table-card">
+            <div class="linked-table-heading">
+              <div>
+                <div class="chart-title linked-table-title">Dados das observações</div>
+                <div id="linkedTableSummary" class="linked-table-summary"></div>
+              </div>
+              <button id="clearLinkedFilters" type="button" class="btn-secondary linked-table-clear">
+                Limpar filtros
+              </button>
+            </div>
+            <div id="linkedDataTable" class="linked-table-wrap"></div>
+            <div class="linked-table-footer">
+              <button id="linkedTablePrev" type="button" class="btn-secondary">Anterior</button>
+              <span id="linkedTablePageInfo"></span>
+              <button id="linkedTableNext" type="button" class="btn-secondary">Próxima</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="notes" class="notes"></div>
+    </section>
+  </main>
+
+<script>
+(() => {
+  'use strict';
+
+  const TREATMENTS = [
+    { key: 'raw', name: 'Dados sem tratamento', short: 'Sem tratamento' },
+    { key: 'no_outliers', name: 'Dados sem outliers', short: 'Sem outliers' },
+    { key: 'minmax', name: 'Dados normalizados por MinMax', short: 'MinMax' },
+    { key: 'log', name: 'Dados com transformação logarítmica', short: 'Transf. logarítmica' },
+    { key: 'winsor', name: 'Dados com winsorização', short: 'Winsorização' },
+    { key: 'zscore', name: 'Dados normalizados por Z-score', short: 'Z-score' }
+  ];
+
+  // Parâmetros reproduzidos a partir dos arquivos de entrada e saída do
+  // Visual Clustering usados na dissertação: uma única inicialização
+  // k-means++ greedy, semente 790, máximo de 300 iterações e tolerância 1e-4.
+  const FINAL_RESTARTS = 1;
+  const FINAL_MAX_ITER = 300;
+  const DIAG_RESTARTS = 1;
+  const DIAG_MAX_ITER = 300;
+  const KMEANS_TOLERANCE = 1e-4;
+  const APPLY_FINAL_MINMAX_BEFORE_KMEANS = true;
+
+  const COLORS = ['#007a4d', '#f6df91', '#b50935', '#e76f51', '#2a9d8f', '#264653', '#457b9d', '#8d5a97', '#6a994e', '#bc6c25', '#577590', '#f94144'];
+  const MAP_NO_DATA_COLOR = '#c9c9c9';
+  const PLOT_CONFIG = { responsive: true, displaylogo: false, toImageButtonOptions: { format: 'png', scale: 2 } };
+  const IBGE_MUNICIPAL_MESH_URL = 'https://servicodados.ibge.gov.br/api/v4/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application%2Fvnd.geo%2Bjson';
+  const IBGE_MUNICIPALITIES_URL = 'https://servicodados.ibge.gov.br/api/v1/localidades/municipios';
+  const MUNICIPAL_GEOJSON_FALLBACK_URL = 'https://cdn.jsdelivr.net/gh/henriquemalvar/br-geojson@main/dist/municipios/all.geojson';
+  const UF_NAME_TO_CODE = {
+    acre: 'AC', alagoas: 'AL', amapa: 'AP', amazonas: 'AM', bahia: 'BA', ceara: 'CE',
+    'distrito federal': 'DF', 'espirito santo': 'ES', goias: 'GO', maranhao: 'MA',
+    'mato grosso': 'MT', 'mato grosso do sul': 'MS', 'minas gerais': 'MG', para: 'PA',
+    paraiba: 'PB', parana: 'PR', pernambuco: 'PE', piaui: 'PI', 'rio de janeiro': 'RJ',
+    'rio grande do norte': 'RN', 'rio grande do sul': 'RS', rondonia: 'RO', roraima: 'RR',
+    'santa catarina': 'SC', 'sao paulo': 'SP', sergipe: 'SE', tocantins: 'TO'
+  };
+  const UF_CODE_TO_SIGLA = {
+    11: 'RO', 12: 'AC', 13: 'AM', 14: 'RR', 15: 'PA', 16: 'AP', 17: 'TO',
+    21: 'MA', 22: 'PI', 23: 'CE', 24: 'RN', 25: 'PB', 26: 'PE', 27: 'AL', 28: 'SE', 29: 'BA',
+    31: 'MG', 32: 'ES', 33: 'RJ', 35: 'SP',
+    41: 'PR', 42: 'SC', 43: 'RS',
+    50: 'MS', 51: 'MT', 52: 'GO', 53: 'DF'
+  };
+
+  const state = {
+    workbook: null,
+    rows: [],
+    columns: [],
+    numericColumns: [],
+    identifierColumns: [],
+    results: {},
+    activeTreatment: 'raw',
+    selectedFeatures: [],
+    geojson: null,
+    geojsonSource: '',
+    geojsonLoadError: '',
+    municipalityByName: new Map(),
+    municipalityByNameUf: new Map(),
+    municipalityByCode: new Map(),
+    municipalityByCode6: new Map(),
+    inputFileName: '',
+    activeClusters: new Set(),
+    municipalityFeatureById: new Map(),
+    tableFiltersByTreatment: {},
+    tablePageByTreatment: {},
+    tablePageSize: 200,
+    linkedFilterTimer: null,
+    resizeLineChartByVisibleClusters: false,
+    showCentroidsInFactorChart: true
+  };
+
+  const el = id => document.getElementById(id);
+  const excelFile = el('excelFile');
+  const sheetSelect = el('sheetSelect');
+  const variablesBox = el('variablesBox');
+  const runButton = el('runButton');
+  const exportButton = el('exportButton');
+  const statusBox = el('status');
+  const statusText = el('statusText');
+  const progressBar = el('progressBar');
+  const labelColumn = el('labelColumn');
+  const ufColumn = el('ufColumn');
+  const codeColumn = el('codeColumn');
+  const rowIdentifierColumn = el('rowIdentifierColumn');
+  const latColumn = el('latColumn');
+  const lonColumn = el('lonColumn');
+  const geojsonStatus = el('geojsonStatus');
+  const mapStats = el('mapStats');
+  const linkedDataTable = el('linkedDataTable');
+  const linkedTableSummary = el('linkedTableSummary');
+  const linkedTablePageInfo = el('linkedTablePageInfo');
+  const linkedTablePrev = el('linkedTablePrev');
+  const linkedTableNext = el('linkedTableNext');
+
+  excelFile.addEventListener('change', handleExcelFile);
+  sheetSelect.addEventListener('change', loadSelectedSheet);
+  el('selectAll').addEventListener('click', () => setAllVariables(true));
+  el('clearAll').addEventListener('click', () => setAllVariables(false));
+  el('selectIndicators').addEventListener('click', selectIndicatorsOnly);
+  runButton.addEventListener('click', runAnalysis);
+  exportButton.addEventListener('click', exportResults);
+
+  [rowIdentifierColumn, labelColumn, ufColumn, codeColumn, latColumn, lonColumn].forEach(control => {
+    control.addEventListener('change', () => {
+      if (Object.keys(state.results).length) {
+        invalidateLinkedTableModels();
+        renderActiveTreatment();
+      }
+    });
+  });
+
+  el('clearLinkedFilters').addEventListener('click', clearLinkedTableFilters);
+  linkedTablePrev.addEventListener('click', () => changeLinkedTablePage(-1));
+  linkedTableNext.addEventListener('click', () => changeLinkedTablePage(1));
+
+  loadBuiltInMunicipalGeoJSON();
+
+  function showStatus(message, percent = 0, type = 'normal') {
+    statusBox.style.display = 'block';
+    statusBox.className = 'status' + (type === 'error' ? ' error' : type === 'success' ? ' success' : '');
+    statusText.textContent = message;
+    progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  }
+
+  function hideStatus() {
+    statusBox.style.display = 'none';
+  }
+
+  function yieldUI() {
+    return new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  async function handleExcelFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (typeof XLSX === 'undefined') {
+      showStatus('A biblioteca de leitura do Excel não foi carregada. Verifique a conexão com a internet e reabra o arquivo HTML.', 0, 'error');
+      return;
+    }
+
+    try {
+      showStatus('Lendo o arquivo Excel...', 5);
+      state.inputFileName = file.name.replace(/\.(xlsx|xls)$/i, '');
+      const buffer = await file.arrayBuffer();
+      state.workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      sheetSelect.innerHTML = '';
+      state.workbook.SheetNames.forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        sheetSelect.appendChild(option);
+      });
+      sheetSelect.disabled = false;
+      loadSelectedSheet();
+      const marcadas = state.numericColumns.length - state.identifierColumns.length;
+      showStatus(
+        `Arquivo carregado. ${state.numericColumns.length} coluna(s) numérica(s) encontrada(s); ${marcadas} marcada(s) como indicadores. `
+        + (state.identifierColumns.length
+          ? `${state.identifierColumns.length} coluna(s) de código, identificação ou coordenada ficaram desmarcadas para não dominarem a distância euclidiana.`
+          : 'Nenhuma coluna de código ou identificação foi detectada.'),
+        100, 'success');
+    } catch (error) {
+      console.error(error);
+      showStatus(`Não foi possível ler o arquivo: ${error.message}`, 0, 'error');
+    }
+  }
+
+  function loadSelectedSheet() {
+    if (!state.workbook) return;
+    const sheetName = sheetSelect.value;
+    const sheet = state.workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true });
+
+    if (!rows.length) {
+      showStatus('A planilha selecionada não contém linhas de dados.', 0, 'error');
+      return;
+    }
+
+    state.rows = rows;
+    state.columns = Array.from(new Set(rows.flatMap(row => Object.keys(row))));
+    state.numericColumns = detectNumericColumns(rows, state.columns);
+    buildVariableSelector();
+    populateColumnSelects();
+    state.results = {};
+    state.tableFiltersByTreatment = {};
+    state.tablePageByTreatment = {};
+    exportButton.disabled = true;
+    el('results').style.display = 'none';
+    runButton.disabled = state.numericColumns.length < 2;
+    el('selectAll').disabled = false;
+    el('clearAll').disabled = false;
+    el('selectIndicators').disabled = false;
+  }
+
+  function detectNumericColumns(rows, columns) {
+    const sample = rows.slice(0, Math.min(rows.length, 5000));
+
+    return columns.filter(column => {
+      let nonEmpty = 0;
+      let numeric = 0;
+
+      for (const row of sample) {
+        const value = row[column];
+
+        if (value === null || value === undefined || value === '') continue;
+        if (typeof value === 'boolean' || value instanceof Date) return false;
+
+        nonEmpty++;
+
+        if (Number.isFinite(toNumber(value))) {
+          numeric++;
+        } else {
+          // Uma coluna só entra na lista de clusterização quando todos os
+          // conteúdos não vazios analisados puderem ser convertidos em número.
+          return false;
+        }
+      }
+
+      return nonEmpty >= 3 && numeric === nonEmpty;
+    });
+  }
+
+  function isIdentifierLike(column) {
+    const s = normalizeText(column);
+    // "ibge" sozinho não marca a coluna como identificador: nomes de indicadores
+    // costumam citar a fonte ("População Estimada IBGE 2025"). O termo só conta
+    // quando acompanha código/id, ou quando é o nome inteiro da coluna.
+    return /(^|\s)(id|codigo|cod|cd|geocodigo|geocod|municipio|cidade|uf|estado|regiao|latitude|longitude|lat|lon|lng|cluster)(\s|$)/.test(s)
+      || /codigo.*municip|municip.*codigo|(^|\s)(cod|codigo|cd|id|geo)\s*ibge|ibge\s*(cod|codigo|cd|id)(\s|$)|geocod|cd\s*mun/.test(s)
+      || /^ibge$/.test(s);
+  }
+
+  function buildVariableSelector() {
+    variablesBox.innerHTML = '';
+    if (!state.numericColumns.length) {
+      variablesBox.innerHTML = '<div class="help">Nenhuma variável numérica foi detectada.</div>';
+      return;
+    }
+
+    // Códigos, identificadores e coordenadas são numéricos, mas não são indicadores.
+    // Em escala bruta um código IBGE de sete dígitos concentra praticamente toda a
+    // variância e o K-means passa a separar por faixa de código, isto é, por UF.
+    // Por isso essas colunas ficam listadas, porém desmarcadas.
+    state.identifierColumns = state.numericColumns.filter(isIdentifierLike);
+
+    if (state.identifierColumns.length) {
+      const warning = document.createElement('div');
+      warning.className = 'variable-warning';
+      warning.innerHTML = `<strong>${state.identifierColumns.length} coluna(s) de identificação desmarcada(s) automaticamente:</strong> `
+        + escapeHtml(state.identifierColumns.join(', '))
+        + '. São valores numéricos sem significado de intensidade. Marque manualmente apenas se quiser mesmo usá-las como variáveis.';
+      variablesBox.appendChild(warning);
+    }
+
+    state.numericColumns.forEach((column, index) => {
+      const id = `var_${index}`;
+      const identifier = isIdentifierLike(column);
+      const item = document.createElement('div');
+      item.className = 'variable-item' + (identifier ? ' identifier' : '');
+      item.innerHTML = `<input type="checkbox" id="${id}" data-column="${escapeHtml(column)}"${identifier ? '' : ' checked'}>`
+        + `<label for="${id}">${escapeHtml(column)}${identifier ? ' <span class="identifier-tag">identificador</span>' : ''}</label>`;
+      variablesBox.appendChild(item);
+    });
+  }
+
+  function setAllVariables(checked) {
+    variablesBox.querySelectorAll('input[type="checkbox"]').forEach(input => { input.checked = checked; });
+  }
+
+  function selectIndicatorsOnly() {
+    variablesBox.querySelectorAll('input[type="checkbox"]').forEach(input => {
+      input.checked = !isIdentifierLike(input.dataset.column);
+    });
+  }
+
+  function populateColumnSelects() {
+    const selects = [labelColumn, ufColumn, codeColumn, latColumn, lonColumn];
+    selects.forEach(select => {
+      select.innerHTML = '<option value="">Não selecionado</option>';
+      state.columns.forEach(column => {
+        const option = document.createElement('option');
+        option.value = column;
+        option.textContent = column;
+        select.appendChild(option);
+      });
+      select.disabled = false;
+    });
+
+    rowIdentifierColumn.innerHTML = '<option value="">Número da linha no Excel</option>';
+    const identifierOptions = state.columns;
+    identifierOptions.forEach(column => {
+      const option = document.createElement('option');
+      option.value = column;
+      option.textContent = column;
+      rowIdentifierColumn.appendChild(option);
+    });
+    rowIdentifierColumn.disabled = false;
+
+    // O padrão com (?!.*cod) impede que "Código Município IBGE" seja escolhida
+    // como coluna de NOME do município quando existe uma coluna "Município".
+    autoSelect(labelColumn, [/^municipio$/i, /nome.*municip/i, /^(?!.*cod).*municip/i, /municip/i, /^cidade$/i, /cidade/i]);
+    autoSelect(ufColumn, [/^uf$/i, /sigla.*uf/i, /uf.*sigla/i, /^estado$/i]);
+    autoSelect(codeColumn, [/codigo.*municip/i, /cod.*ibge/i, /geocod/i, /^ibge$/i, /^id$/i]);
+    autoSelect(rowIdentifierColumn, [
+      /^municipio$/i,
+      /nome.*municip/i,
+      /^(?!.*cod).*municip/i,
+      /municip/i,
+      /^cidade$/i,
+      /cidade/i,
+      /identifica/i,
+      /descri/i,
+      /nome/i
+    ]);
+    autoSelect(latColumn, [/^lat$/i, /latitude/i]);
+    autoSelect(lonColumn, [/^lon$/i, /^lng$/i, /longitude/i]);
+  }
+
+  function autoSelect(select, patterns) {
+    // Os padrões são testados em ordem de especificidade: um padrão mais forte
+    // vence mesmo quando a coluna correspondente aparece depois na planilha.
+    // Antes, a primeira coluna que casasse com QUALQUER padrão era escolhida e
+    // "População Estimada IBGE 2025" podia ocupar o lugar de "Código IBGE".
+    for (const pattern of patterns) {
+      const match = state.columns.find(column => pattern.test(normalizeText(column)));
+      if (match) {
+        select.value = match;
+        return;
+      }
+    }
+  }
+
+
+  async function loadBuiltInMunicipalGeoJSON() {
+    setGeoJSONStatus('Carregando a malha municipal oficial do IBGE...', 'loading');
+
+    try {
+      const [meshResponse, localitiesResponse] = await Promise.all([
+        fetch(IBGE_MUNICIPAL_MESH_URL, {
+          cache: 'force-cache'
+        }),
+        fetch(IBGE_MUNICIPALITIES_URL, { cache: 'force-cache' })
+      ]);
+
+      if (!meshResponse.ok) throw new Error(`falha HTTP ${meshResponse.status} na malha`);
+      if (!localitiesResponse.ok) throw new Error(`falha HTTP ${localitiesResponse.status} nas localidades`);
+
+      const [mesh, localities] = await Promise.all([meshResponse.json(), localitiesResponse.json()]);
+      if (!mesh || mesh.type !== 'FeatureCollection' || !Array.isArray(mesh.features) || !mesh.features.length) {
+        throw new Error('a API do IBGE não retornou um FeatureCollection válido');
+      }
+      if (!Array.isArray(localities) || !localities.length) {
+        throw new Error('a API de localidades do IBGE não retornou a lista municipal');
+      }
+
+      const localityByCode = new Map();
+      localities.forEach(item => {
+        const code = normalizeCode(item.id);
+        const uf = getMunicipalityUF(item);
+        if (code) localityByCode.set(code, { name: item.nome || '', uf });
+      });
+
+      let enriched = 0;
+      mesh.features.forEach(feature => {
+        const properties = feature.properties || (feature.properties = {});
+        const code = normalizeCode(firstDefined(
+          properties.cd_geocmu,
+          properties.CD_MUN,
+          properties.CD_GEOCMU,
+          properties.codarea,
+          properties.codigo,
+          feature.id,
+          ''
+        ));
+        const locality = localityByCode.get(code);
+        if (!locality) return;
+        properties.nome = locality.name;
+        properties.uf = locality.uf;
+        properties.cd_geocmu = code;
+        feature.id = code;
+        enriched++;
+      });
+
+      if (enriched < Math.min(5000, Math.floor(mesh.features.length * 0.9))) {
+        throw new Error('não foi possível associar os códigos da malha aos nomes municipais');
+      }
+
+      state.geojson = mesh;
+      state.geojsonSource = 'IBGE';
+      state.geojsonLoadError = '';
+      prepareMunicipalityIndexes();
+      setGeoJSONStatus(`Malha oficial do IBGE disponível e preparada para o mapa: ${mesh.features.length.toLocaleString('pt-BR')} municípios.`, 'success');
+    } catch (officialError) {
+      console.warn('Falha ao carregar diretamente do IBGE. Tentando cópia derivada das bases do IBGE.', officialError);
+      try {
+        const response = await fetch(MUNICIPAL_GEOJSON_FALLBACK_URL, { cache: 'force-cache' });
+        if (!response.ok) throw new Error(`falha HTTP ${response.status}`);
+        const json = await response.json();
+        if (!json || json.type !== 'FeatureCollection' || !Array.isArray(json.features) || !json.features.length) {
+          throw new Error('o arquivo alternativo não é um FeatureCollection válido');
+        }
+
+        state.geojson = json;
+        state.geojsonSource = 'Cópia derivada das bases do IBGE';
+        state.geojsonLoadError = '';
+        prepareMunicipalityIndexes();
+        setGeoJSONStatus(`Malha derivada das bases do IBGE disponível e preparada para o mapa: ${json.features.length.toLocaleString('pt-BR')} municípios.`, 'success');
+      } catch (fallbackError) {
+        console.error(fallbackError);
+        state.geojson = null;
+        state.geojsonLoadError = fallbackError.message;
+        setGeoJSONStatus('Não foi possível carregar a malha municipal. Verifique a conexão com a internet e reabra o aplicativo.', 'error');
+      }
+    }
+
+    const activeResult = state.results[state.activeTreatment];
+    if (activeResult && !activeResult.skipped && state.geojson) renderMap(activeResult);
+  }
+
+  function getMunicipalityUF(item) {
+    return normalizeUF(firstDefined(
+      item?.microrregiao?.mesorregiao?.UF?.sigla,
+      item?.['regiao-imediata']?.['regiao-intermediaria']?.UF?.sigla,
+      item?.regiaoImediata?.regiaoIntermediaria?.UF?.sigla,
+      ''
+    ));
+  }
+
+  function setGeoJSONStatus(message, type) {
+    geojsonStatus.textContent = message;
+    geojsonStatus.className = `map-source-status ${type}`;
+  }
+
+
+  function signedRingArea(ring) {
+    if (!Array.isArray(ring) || ring.length < 4) return 0;
+    let area = 0;
+
+    for (let i = 0; i < ring.length; i++) {
+      const current = ring[i];
+      const next = ring[(i + 1) % ring.length];
+
+      if (!Array.isArray(current) || !Array.isArray(next)) continue;
+      const x1 = Number(current[0]);
+      const y1 = Number(current[1]);
+      const x2 = Number(next[0]);
+      const y2 = Number(next[1]);
+
+      if (![x1, y1, x2, y2].every(Number.isFinite)) continue;
+      area += x1 * y2 - x2 * y1;
+    }
+
+    return area / 2;
+  }
+
+  function rewindPolygonForPlotly(polygonCoordinates) {
+    if (!Array.isArray(polygonCoordinates)) return polygonCoordinates;
+
+    return polygonCoordinates.map((ring, ringIndex) => {
+      if (!Array.isArray(ring) || ring.length < 4) return ring;
+
+      const area = signedRingArea(ring);
+      if (!Number.isFinite(area) || area === 0) return ring;
+
+      const isClockwise = area < 0;
+      const mustBeClockwise = ringIndex === 0;
+
+      return isClockwise === mustBeClockwise ? ring : [...ring].reverse();
+    });
+  }
+
+  function normalizeGeometryForPlotly(geometry) {
+    if (!geometry || !geometry.type) return geometry;
+
+    if (geometry.type === 'Polygon') {
+      geometry.coordinates = rewindPolygonForPlotly(geometry.coordinates);
+      return geometry;
+    }
+
+    if (geometry.type === 'MultiPolygon') {
+      geometry.coordinates = geometry.coordinates.map(rewindPolygonForPlotly);
+      return geometry;
+    }
+
+    if (geometry.type === 'GeometryCollection' && Array.isArray(geometry.geometries)) {
+      geometry.geometries = geometry.geometries.map(normalizeGeometryForPlotly);
+    }
+
+    return geometry;
+  }
+
+  function normalizeGeoJSONForPlotly(geojson) {
+    if (!geojson || !Array.isArray(geojson.features)) return;
+
+    geojson.features.forEach(feature => {
+      if (feature && feature.geometry) {
+        feature.geometry = normalizeGeometryForPlotly(feature.geometry);
+      }
+    });
+  }
+
+  function prepareMunicipalityIndexes() {
+    normalizeGeoJSONForPlotly(state.geojson);
+
+    state.municipalityByName = new Map();
+    state.municipalityByNameUf = new Map();
+    state.municipalityByCode = new Map();
+    state.municipalityByCode6 = new Map();
+    state.municipalityFeatureById = new Map();
+
+    state.geojson.features.forEach((feature, index) => {
+      const properties = feature.properties || (feature.properties = {});
+      const name = firstDefined(properties.nome, properties.NM_MUN, properties.name, properties.NOME, '');
+      const uf = normalizeUF(firstDefined(properties.uf, properties.SIGLA_UF, properties.UF, properties.sigla, ''));
+      const code = normalizeCode(firstDefined(properties.cd_geocmu, properties.CD_MUN, properties.CD_GEOCMU, properties.codarea, feature.id, ''));
+      const normalizedName = normalizeMunicipalityName(name);
+      const id = code || `${normalizedName}|${uf}|${index}`;
+
+      feature.id = id;
+      state.municipalityFeatureById.set(String(id), feature);
+      properties.__app_name = String(name || 'Município sem nome');
+      properties.__app_uf = uf;
+      properties.__app_code = code;
+
+      if (code) {
+        state.municipalityByCode.set(code, id);
+        // Índice adicional pelos 6 primeiros dígitos: muitas bases derivadas do
+        // IBGE trazem o código municipal sem o dígito verificador final.
+        if (code.length === 7 && !state.municipalityByCode6.has(code.slice(0, 6))) {
+          state.municipalityByCode6.set(code.slice(0, 6), id);
+        }
+      }
+      if (normalizedName) {
+        if (!state.municipalityByName.has(normalizedName)) state.municipalityByName.set(normalizedName, []);
+        state.municipalityByName.get(normalizedName).push(id);
+        if (uf) state.municipalityByNameUf.set(`${normalizedName}|${uf}`, id);
+      }
+    });
+  }
+
+  function resolveMunicipalityCode(value) {
+    const digits = normalizeCode(value);
+    if (!digits || digits.length < 6) return '';
+    if (state.municipalityByCode.has(digits)) return state.municipalityByCode.get(digits);
+    // Código de distrito ou subdistrito (9 ou 11 dígitos): os 7 primeiros
+    // dígitos identificam o município.
+    if (digits.length > 7 && state.municipalityByCode.has(digits.slice(0, 7))) {
+      return state.municipalityByCode.get(digits.slice(0, 7));
+    }
+    // Código com 6 dígitos, sem o dígito verificador.
+    if (digits.length === 6 && state.municipalityByCode6.has(digits)) {
+      return state.municipalityByCode6.get(digits);
+    }
+    return '';
+  }
+
+  function matchMunicipality(row, nameCol, ufCol, codeCol) {
+    const normalizedName = nameCol ? normalizeMunicipalityName(row[nameCol]) : '';
+    const uf = ufCol ? normalizeUF(row[ufCol]) : '';
+    const codeId = codeCol ? resolveMunicipalityCode(row[codeCol]) : '';
+
+    if (normalizedName && uf) {
+      const id = state.municipalityByNameUf.get(`${normalizedName}|${uf}`);
+      if (id) return { id, method: 'name_uf' };
+    }
+
+    // O código IBGE é único e tem prioridade sobre o nome quando a UF informada
+    // não confere, evitando pintar um município de outro estado no mapa.
+    if (codeId) return { id: codeId, method: 'code' };
+
+    if (normalizedName) {
+      const candidates = state.municipalityByName.get(normalizedName) || [];
+      if (candidates.length === 1) {
+        // Antes, um nome único era aceito mesmo contradizendo a UF informada.
+        if (uf) return { id: null, method: 'uf_mismatch' };
+        return { id: candidates[0], method: 'name' };
+      }
+      if (candidates.length > 1) return { id: null, method: 'ambiguous' };
+    }
+
+    return { id: null, method: 'not_found' };
+  }
+
+  async function runAnalysis() {
+    try {
+      if (!state.rows.length) throw new Error('Carregue uma planilha Excel.');
+      if (typeof Plotly === 'undefined') throw new Error('A biblioteca de gráficos não foi carregada. Verifique a conexão com a internet.');
+
+      const selectedFeatures = Array.from(variablesBox.querySelectorAll('input[type="checkbox"]:checked')).map(input => input.dataset.column);
+      if (selectedFeatures.length < 2) throw new Error('Selecione pelo menos duas variáveis numéricas.');
+
+      const requestedK = parseInt(el('clusterCount').value, 10);
+      let maxK = parseInt(el('maxK').value, 10);
+      const parsedSeed = parseInt(el('seed').value, 10);
+      const seed = Number.isInteger(parsedSeed) ? parsedSeed : 790;
+
+      if (!Number.isInteger(requestedK) || requestedK < 2) {
+        throw new Error('Informe um número de clusters igual ou superior a 2.');
+      }
+
+      maxK = Math.max(requestedK, Math.min(20, Number.isInteger(maxK) ? maxK : 15));
+
+      state.selectedFeatures = selectedFeatures;
+      state.results = {};
+      state.tableFiltersByTreatment = {};
+      state.tablePageByTreatment = {};
+      runButton.disabled = true;
+      exportButton.disabled = true;
+      el('results').style.display = 'none';
+      showStatus('Preparando os dados...', 2);
+      await yieldUI();
+
+      const prepared = prepareBaseData(state.rows, selectedFeatures);
+      if (prepared.matrix.length <= requestedK) {
+        throw new Error(`Há apenas ${prepared.matrix.length} linhas completas. O número de clusters deve ser menor que a quantidade de linhas válidas.`);
+      }
+
+      const treatments = createTreatments(prepared.matrix, prepared.rowIndices, selectedFeatures);
+      const totalSteps = TREATMENTS.length;
+
+      for (let t = 0; t < TREATMENTS.length; t++) {
+        const descriptor = TREATMENTS[t];
+        const data = treatments[descriptor.key];
+        const basePercent = 5 + (t / totalSteps) * 90;
+
+        showStatus(`Processando ${descriptor.name}: normalização MinMax e K-means compatível...`, basePercent);
+        await yieldUI();
+
+        if (!data || data.matrix.length <= requestedK) {
+          state.results[descriptor.key] = {
+            descriptor,
+            skipped: true,
+            reason: `Quantidade insuficiente de linhas após o tratamento: ${data ? data.matrix.length : 0}.`
+          };
+          continue;
+        }
+
+        // displayMatrix preserva a escala que entrou no Visual Clustering.
+        // modelMatrix recebe a normalização MinMax interna usada nas distâncias.
+        const displayMatrix = data.matrix.map(row => row.slice());
+        const finalScaling = APPLY_FINAL_MINMAX_BEFORE_KMEANS
+          ? applyFinalMinMax(displayMatrix)
+          : { matrix: displayMatrix.map(row => row.slice()), mins: [], maxs: [] };
+        const modelMatrix = finalScaling.matrix;
+        const diagnosticMaxK = Math.min(maxK, modelMatrix.length - 1);
+
+        // O Visual Clustering usado nos arquivos fornecidos equivale a:
+        // KMeans(k, init='k-means++', n_init=1, random_state=790,
+        //        max_iter=300, tol=1e-4, algorithm='lloyd').
+        const rawFinalFit = kmeans(modelMatrix, requestedK, {
+          seed,
+          maxIter: FINAL_MAX_ITER,
+          tolerance: KMEANS_TOLERANCE
+        });
+
+        // O site renumera os clusters pelo ranking médio dos centroides
+        // normalizados, do maior escore para o menor.
+        const finalFit = canonicalizeKMeans(rawFinalFit);
+
+        const diagnostics = await computeDiagnostics(
+          modelMatrix,
+          diagnosticMaxK,
+          seed,
+          { k: requestedK, fit: finalFit },
+          (k, max, message) => {
+            const local = k / max;
+            showStatus(
+              `Processando ${descriptor.name}: ${message || `diagnóstico k=${k} de ${max}`}...`,
+              basePercent + local * (90 / totalSteps) * 0.72
+            );
+          }
+        );
+
+        // O Visual Clustering exporta e apresenta os centroides na escala
+        // original do arquivo importado, apesar de clusterizar em MinMax.
+        const displayCentroids = computeCentroidsForLabels(
+          displayMatrix,
+          finalFit.labels,
+          requestedK
+        );
+
+        const pca = computePCA(displayMatrix, displayCentroids);
+        const clusterSizes = Array(requestedK).fill(0);
+        finalFit.labels.forEach(label => clusterSizes[label]++);
+
+        state.results[descriptor.key] = {
+          descriptor,
+          skipped: false,
+          matrix: displayMatrix,
+          modelMatrix,
+          rowIndices: data.rowIndices,
+          metadata: {
+            ...data.metadata,
+            finalMinMaxApplied: APPLY_FINAL_MINMAX_BEFORE_KMEANS,
+            finalMinMaxMins: finalScaling.mins,
+            finalMinMaxMaxs: finalScaling.maxs,
+            pipeline: `${descriptor.name} → MinMax interno → K-means compatível`
+          },
+          labels: finalFit.labels,
+          centroids: displayCentroids,
+          modelCentroids: finalFit.centroids,
+          rankingScores: finalFit.rankingScores,
+          sse: finalFit.sse,
+          clusterSizes,
+          emptyClusters: clusterSizes.filter(size => size === 0).length,
+          diagnostics,
+          pca,
+          requestedK,
+          sourceRows: prepared.matrix.length,
+          validRows: modelMatrix.length,
+          removedRows: prepared.matrix.length - data.matrix.length,
+          missingRows: prepared.missingRows,
+          features: selectedFeatures
+        };
+
+        await yieldUI();
+      }
+
+      state.activeTreatment = TREATMENTS.find(t => state.results[t.key] && !state.results[t.key].skipped)?.key || 'raw';
+      state.activeClusters = new Set(Array.from({ length: requestedK }, (_, cluster) => cluster));
+      buildTabs();
+      buildClusterVisibilityControls(requestedK);
+      renderActiveTreatment();
+      el('results').style.display = 'block';
+      exportButton.disabled = false;
+      showStatus('Clusterização concluída com os parâmetros compatíveis com o Visual Clustering.', 100, 'success');
+      el('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      console.error(error);
+      showStatus(error.message || 'Ocorreu um erro durante a clusterização.', 0, 'error');
+    } finally {
+      runButton.disabled = false;
+    }
+  }
+
+  function prepareBaseData(rows, features) {
+    const matrix = [];
+    const rowIndices = [];
+    let missingRows = 0;
+
+    rows.forEach((row, index) => {
+      const values = features.map(feature => toNumber(row[feature]));
+      if (values.every(Number.isFinite)) {
+        matrix.push(values);
+        rowIndices.push(index);
+      } else {
+        missingRows++;
+      }
+    });
+
+    return { matrix, rowIndices, missingRows };
+  }
+
+  function applyFinalMinMax(matrix) {
+    if (!Array.isArray(matrix) || !matrix.length) {
+      return { matrix: [], mins: [], maxs: [] };
+    }
+
+    const featureCount = matrix[0].length;
+    const mins = Array(featureCount).fill(Infinity);
+    const maxs = Array(featureCount).fill(-Infinity);
+
+    matrix.forEach(row => {
+      for (let j = 0; j < featureCount; j++) {
+        const value = row[j];
+        if (value < mins[j]) mins[j] = value;
+        if (value > maxs[j]) maxs[j] = value;
+      }
+    });
+
+    const normalized = matrix.map(row => row.map((value, j) => {
+      const amplitude = maxs[j] - mins[j];
+      return amplitude === 0 ? 0 : (value - mins[j]) / amplitude;
+    }));
+
+    return { matrix: normalized, mins, maxs };
+  }
+
+  function createTreatments(matrix, rowIndices, features) {
+    const raw = matrix.map(row => row.slice());
+    const result = {
+      raw: { matrix: raw, rowIndices: rowIndices.slice(), metadata: { description: 'Valores originais.' } }
+    };
+
+    const bounds = features.map((_, j) => {
+      const values = raw.map(row => row[j]).sort((a, b) => a - b);
+      const q1 = quantileSorted(values, 0.25);
+      const q3 = quantileSorted(values, 0.75);
+      const iqr = q3 - q1;
+      return { lower: q1 - 1.5 * iqr, upper: q3 + 1.5 * iqr, q1, q3 };
+    });
+    const keep = raw.map(row => row.every((value, j) => value >= bounds[j].lower && value <= bounds[j].upper));
+    result.no_outliers = {
+      matrix: raw.filter((_, i) => keep[i]).map(row => row.slice()),
+      rowIndices: rowIndices.filter((_, i) => keep[i]),
+      metadata: { description: 'Linhas com qualquer outlier pelo IQR foram removidas.', bounds }
+    };
+
+    const mins = features.map((_, j) => Math.min(...raw.map(row => row[j])));
+    const maxs = features.map((_, j) => Math.max(...raw.map(row => row[j])));
+    result.minmax = {
+      matrix: raw.map(row => row.map((value, j) => maxs[j] === mins[j] ? 0 : (value - mins[j]) / (maxs[j] - mins[j]))),
+      rowIndices: rowIndices.slice(),
+      metadata: { description: 'Escala de 0 a 1.', mins, maxs }
+    };
+
+    const logShifts = features.map((_, j) => {
+      const min = mins[j];
+      return min < 0 ? -min : 0;
+    });
+    result.log = {
+      matrix: raw.map(row => row.map((value, j) => Math.log1p(value + logShifts[j]))),
+      rowIndices: rowIndices.slice(),
+      metadata: { description: 'ln(1+x), com deslocamento somente quando a variável possui valores negativos.', shifts: logShifts }
+    };
+
+    const winsorBounds = features.map((_, j) => {
+      const values = raw.map(row => row[j]).sort((a, b) => a - b);
+      return { lower: quantileSorted(values, 0.01), upper: quantileSorted(values, 0.99) };
+    });
+    result.winsor = {
+      matrix: raw.map(row => row.map((value, j) => Math.min(winsorBounds[j].upper, Math.max(winsorBounds[j].lower, value)))),
+      rowIndices: rowIndices.slice(),
+      metadata: { description: 'Valores limitados aos percentis 1% e 99%.', bounds: winsorBounds }
+    };
+
+    const means = features.map((_, j) => mean(raw.map(row => row[j])));
+    const sds = features.map((_, j) => standardDeviation(raw.map(row => row[j]), means[j]));
+    result.zscore = {
+      matrix: raw.map(row => row.map((value, j) => sds[j] === 0 ? 0 : (value - means[j]) / sds[j])),
+      rowIndices: rowIndices.slice(),
+      metadata: { description: 'Média igual a 0 e desvio padrão igual a 1.', means, sds }
+    };
+
+    return result;
+  }
+
+  async function computeDiagnostics(matrix, maxK, seed, reuse, onProgress) {
+    const kValues = [];
+    const sseValues = [];
+    const silhouetteValues = [];
+    const silhouetteSampleSizes = [];
+    const fits = [];
+    let undefinedSilhouettes = 0;
+
+    for (let k = 1; k <= maxK; k++) {
+      const fit = reuse && k === reuse.k
+        ? reuse.fit
+        : kmeans(matrix, k, {
+            seed,
+            maxIter: DIAG_MAX_ITER,
+            tolerance: KMEANS_TOLERANCE
+          });
+
+      kValues.push(k);
+      sseValues.push(fit.sse);
+      fits.push(fit);
+
+      if (onProgress) onProgress(k, maxK, `K-means k=${k} de ${maxK}`);
+      await yieldUI();
+    }
+
+    const partitions = [];
+    for (let k = 2; k <= maxK; k++) {
+      partitions.push({ labels: fits[k - 1].labels, k });
+    }
+
+    const exactValues = partitions.length
+      ? await silhouetteExactMulti(matrix, partitions, (done, total) => {
+          if (onProgress) {
+            onProgress(
+              maxK,
+              maxK,
+              `Silhouette exato na base completa: ${Math.round(100 * done / total)}%`
+            );
+          }
+        })
+      : [];
+
+    for (let k = 1; k <= maxK; k++) {
+      if (k === 1) {
+        silhouetteValues.push(null);
+        silhouetteSampleSizes.push(0);
+        continue;
+      }
+
+      const value = exactValues[k - 2];
+      silhouetteValues.push(value);
+      silhouetteSampleSizes.push(matrix.length);
+      if (value === null) undefinedSilhouettes++;
+    }
+
+    return {
+      kValues,
+      sseValues,
+      silhouetteValues,
+      silhouetteSampleSize: matrix.length,
+      silhouetteSampleSizes,
+      silhouetteMode: 'exact_curve',
+      monotonicityRepairs: 0,
+      undefinedSilhouettes
+    };
+  }
+
+  class NumpyRandomState {
+    constructor(seed = 5489) {
+      this.mt = new Uint32Array(624);
+      this.index = 624;
+      this.mt[0] = seed >>> 0;
+
+      for (let i = 1; i < 624; i++) {
+        const previous = this.mt[i - 1];
+        const mixed = previous ^ (previous >>> 30);
+        this.mt[i] = (Math.imul(1812433253, mixed) + i) >>> 0;
+      }
+    }
+
+    twist() {
+      for (let i = 0; i < 624; i++) {
+        const y = (this.mt[i] & 0x80000000)
+          | (this.mt[(i + 1) % 624] & 0x7fffffff);
+        let next = this.mt[(i + 397) % 624] ^ (y >>> 1);
+        if (y & 1) next ^= 0x9908b0df;
+        this.mt[i] = next >>> 0;
+      }
+      this.index = 0;
+    }
+
+    uint32() {
+      if (this.index >= 624) this.twist();
+
+      let value = this.mt[this.index++];
+      value ^= value >>> 11;
+      value ^= (value << 7) & 0x9d2c5680;
+      value ^= (value << 15) & 0xefc60000;
+      value ^= value >>> 18;
+      return value >>> 0;
+    }
+
+    random() {
+      // Conversão de 53 bits usada pelo RandomState legado do NumPy.
+      const high = this.uint32() >>> 5;
+      const low = this.uint32() >>> 6;
+      return (high * 67108864 + low) / 9007199254740992;
+    }
+  }
+
+  function centerMatrix(matrix) {
+    const n = matrix.length;
+    const p = matrix[0].length;
+    const means = Array(p).fill(0);
+
+    for (const row of matrix) {
+      for (let j = 0; j < p; j++) means[j] += row[j] / n;
+    }
+
+    return {
+      means,
+      matrix: matrix.map(row => row.map((value, j) => value - means[j]))
+    };
+  }
+
+  function meanPopulationVariance(matrix) {
+    const n = matrix.length;
+    const p = matrix[0].length;
+    const means = Array(p).fill(0);
+
+    for (const row of matrix) {
+      for (let j = 0; j < p; j++) means[j] += row[j] / n;
+    }
+
+    let total = 0;
+    for (let j = 0; j < p; j++) {
+      let variance = 0;
+      for (const row of matrix) {
+        const difference = row[j] - means[j];
+        variance += difference * difference;
+      }
+      total += variance / n;
+    }
+
+    return total / p;
+  }
+
+  function initializeKMeansPlusPlusSklearn(matrix, k, rng) {
+    const n = matrix.length;
+    const centers = [];
+    const indices = [];
+
+    // Com pesos uniformes, RandomState.choice equivale a localizar
+    // random_sample() na distribuição acumulada uniforme.
+    const firstIndex = Math.min(n - 1, Math.floor(rng.random() * n));
+    centers.push(matrix[firstIndex].slice());
+    indices.push(firstIndex);
+
+    let closestDistances = new Float64Array(n);
+    let currentPotential = 0;
+
+    for (let i = 0; i < n; i++) {
+      const distance = squaredDistance(matrix[i], centers[0]);
+      closestDistances[i] = distance;
+      currentPotential += distance;
+    }
+
+    const localTrials = 2 + Math.floor(Math.log(k));
+
+    while (centers.length < k) {
+      if (!(currentPotential > 0)) {
+        const fallback = Math.min(n - 1, Math.floor(rng.random() * n));
+        centers.push(matrix[fallback].slice());
+        indices.push(fallback);
+        continue;
+      }
+
+      const cumulative = new Float64Array(n);
+      let cumulativeValue = 0;
+      for (let i = 0; i < n; i++) {
+        cumulativeValue += closestDistances[i];
+        cumulative[i] = cumulativeValue;
+      }
+
+      let bestCandidate = n - 1;
+      let bestPotential = Infinity;
+      let bestDistances = null;
+
+      for (let trial = 0; trial < localTrials; trial++) {
+        const target = rng.random() * currentPotential;
+
+        // np.searchsorted(cumsum, target), com side='left'.
+        let low = 0;
+        let high = n;
+        while (low < high) {
+          const middle = (low + high) >>> 1;
+          if (cumulative[middle] < target) low = middle + 1;
+          else high = middle;
+        }
+
+        const candidate = Math.min(n - 1, low);
+        const candidateDistances = new Float64Array(n);
+        let candidatePotential = 0;
+
+        for (let i = 0; i < n; i++) {
+          const distance = squaredDistance(matrix[i], matrix[candidate]);
+          const minimum = distance < closestDistances[i]
+            ? distance
+            : closestDistances[i];
+          candidateDistances[i] = minimum;
+          candidatePotential += minimum;
+        }
+
+        if (candidatePotential < bestPotential) {
+          bestPotential = candidatePotential;
+          bestCandidate = candidate;
+          bestDistances = candidateDistances;
+        }
+      }
+
+      centers.push(matrix[bestCandidate].slice());
+      indices.push(bestCandidate);
+      closestDistances = bestDistances;
+      currentPotential = bestPotential;
+    }
+
+    return { centers, indices };
+  }
+
+  function kmeans(matrix, k, options = {}) {
+    const n = matrix.length;
+    const p = matrix[0].length;
+    const seed = Number.isInteger(options.seed) ? options.seed : 790;
+    const maxIter = Number.isInteger(options.maxIter) ? options.maxIter : 300;
+    const relativeTolerance = Number.isFinite(options.tolerance)
+      ? options.tolerance
+      : 1e-4;
+
+    const centered = centerMatrix(matrix);
+    const workingMatrix = centered.matrix;
+    const rng = new NumpyRandomState(seed);
+    const initialization = initializeKMeansPlusPlusSklearn(
+      workingMatrix,
+      k,
+      rng
+    );
+
+    let centroids = initialization.centers.map(row => row.slice());
+    let labels = new Int32Array(n);
+    labels.fill(-1);
+    const previousLabels = new Int32Array(n);
+    previousLabels.fill(-1);
+
+    const absoluteTolerance = meanPopulationVariance(workingMatrix)
+      * relativeTolerance;
+
+    let strictConvergence = false;
+    let iterations = 0;
+
+    for (let iteration = 0; iteration < maxIter; iteration++) {
+      const sums = Array.from({ length: k }, () => Array(p).fill(0));
+      const counts = Array(k).fill(0);
+      const assignedDistances = new Float64Array(n);
+
+      for (let i = 0; i < n; i++) {
+        let bestCluster = 0;
+        let bestDistance = Infinity;
+
+        for (let cluster = 0; cluster < k; cluster++) {
+          const distance = squaredDistance(
+            workingMatrix[i],
+            centroids[cluster]
+          );
+
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestCluster = cluster;
+          }
+        }
+
+        labels[i] = bestCluster;
+        assignedDistances[i] = bestDistance;
+        counts[bestCluster]++;
+
+        for (let j = 0; j < p; j++) {
+          sums[bestCluster][j] += workingMatrix[i][j];
+        }
+      }
+
+      // Relocação de clusters vazios pelo ponto mais distante, compatível
+      // com a estratégia do Lloyd denso do scikit-learn.
+      const emptyClusters = [];
+      for (let cluster = 0; cluster < k; cluster++) {
+        if (counts[cluster] === 0) emptyClusters.push(cluster);
+      }
+
+      if (emptyClusters.length) {
+        const farthest = Array.from({ length: n }, (_, index) => index)
+          .sort((a, b) => assignedDistances[b] - assignedDistances[a]);
+
+        let cursor = 0;
+        for (const emptyCluster of emptyClusters) {
+          while (
+            cursor < farthest.length
+            && counts[labels[farthest[cursor]]] <= 1
+          ) {
+            cursor++;
+          }
+
+          if (cursor >= farthest.length) break;
+
+          const pointIndex = farthest[cursor++];
+          const donorCluster = labels[pointIndex];
+
+          counts[donorCluster]--;
+          counts[emptyCluster]++;
+
+          for (let j = 0; j < p; j++) {
+            sums[donorCluster][j] -= workingMatrix[pointIndex][j];
+            sums[emptyCluster][j] += workingMatrix[pointIndex][j];
+          }
+
+          labels[pointIndex] = emptyCluster;
+        }
+      }
+
+      const updatedCentroids = Array.from({ length: k }, (_, cluster) => {
+        if (counts[cluster] <= 0) return centroids[cluster].slice();
+        return sums[cluster].map(value => value / counts[cluster]);
+      });
+
+      let labelsUnchanged = true;
+      for (let i = 0; i < n; i++) {
+        if (labels[i] !== previousLabels[i]) {
+          labelsUnchanged = false;
+          break;
+        }
+      }
+
+      let centerShift = 0;
+      for (let cluster = 0; cluster < k; cluster++) {
+        centerShift += squaredDistance(
+          centroids[cluster],
+          updatedCentroids[cluster]
+        );
+      }
+
+      centroids = updatedCentroids;
+      iterations = iteration + 1;
+
+      if (labelsUnchanged) {
+        strictConvergence = true;
+        break;
+      }
+
+      if (centerShift <= absoluteTolerance) break;
+      previousLabels.set(labels);
+    }
+
+    if (!strictConvergence) {
+      // E-step final para que os rótulos correspondam aos centroides finais.
+      for (let i = 0; i < n; i++) {
+        let bestCluster = 0;
+        let bestDistance = Infinity;
+
+        for (let cluster = 0; cluster < k; cluster++) {
+          const distance = squaredDistance(
+            workingMatrix[i],
+            centroids[cluster]
+          );
+
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestCluster = cluster;
+          }
+        }
+
+        labels[i] = bestCluster;
+      }
+    }
+
+    let sse = 0;
+    for (let i = 0; i < n; i++) {
+      sse += squaredDistance(
+        workingMatrix[i],
+        centroids[labels[i]]
+      );
+    }
+
+    const restoredCentroids = centroids.map(row =>
+      row.map((value, j) => value + centered.means[j])
+    );
+
+    return {
+      labels: Array.from(labels),
+      centroids: restoredCentroids,
+      sse,
+      iterations,
+      initializationIndices: initialization.indices
+    };
+  }
+
+  function canonicalizeKMeans(fit) {
+    const rankingScores = fit.centroids.map(centroid =>
+      centroid.reduce((sum, value) => sum + value, 0) / centroid.length
+    );
+
+    const order = rankingScores
+      .map((score, index) => ({ score, index }))
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.index - b.index;
+      })
+      .map(item => item.index);
+
+    const remap = new Map(
+      order.map((oldIndex, newIndex) => [oldIndex, newIndex])
+    );
+
+    return {
+      ...fit,
+      centroids: order.map(index => fit.centroids[index]),
+      labels: fit.labels.map(label => remap.get(label)),
+      rankingScores: order.map(index => rankingScores[index]),
+      rankingOrder: order
+    };
+  }
+
+  function computeCentroidsForLabels(matrix, labels, k) {
+    const p = matrix[0].length;
+    const sums = Array.from({ length: k }, () => Array(p).fill(0));
+    const counts = Array(k).fill(0);
+
+    for (let i = 0; i < matrix.length; i++) {
+      const cluster = labels[i];
+      counts[cluster]++;
+      for (let j = 0; j < p; j++) {
+        sums[cluster][j] += matrix[i][j];
+      }
+    }
+
+    return sums.map((row, cluster) =>
+      counts[cluster] > 0
+        ? row.map(value => value / counts[cluster])
+        : Array(p).fill(NaN)
+    );
+  }
+
+  function computePCA(matrix, centroids) {
+    const n = matrix.length;
+    const p = matrix[0].length;
+    const means = Array(p).fill(0);
+    for (const row of matrix) for (let j = 0; j < p; j++) means[j] += row[j] / n;
+
+    const covariance = Array.from({ length: p }, () => Array(p).fill(0));
+    for (const row of matrix) {
+      for (let i = 0; i < p; i++) {
+        const xi = row[i] - means[i];
+        for (let j = i; j < p; j++) covariance[i][j] += xi * (row[j] - means[j]);
+      }
+    }
+    const divisor = Math.max(1, n - 1);
+    for (let i = 0; i < p; i++) {
+      for (let j = i; j < p; j++) {
+        covariance[i][j] /= divisor;
+        covariance[j][i] = covariance[i][j];
+      }
+    }
+
+    const eigen = jacobiEigen(covariance);
+    const sorted = eigen.values.map((value, index) => ({ value, vector: eigen.vectors.map(row => row[index]) }))
+      .sort((a, b) => b.value - a.value);
+    const v1 = sorted[0]?.vector || Array(p).fill(0);
+    const v2 = sorted[1]?.vector || Array(p).fill(0);
+    const totalVariance = sorted.reduce((sum, item) => sum + Math.max(0, item.value), 0) || 1;
+    const explained = [Math.max(0, sorted[0]?.value || 0) / totalVariance, Math.max(0, sorted[1]?.value || 0) / totalVariance];
+
+    const project = row => {
+      let f1 = 0;
+      let f2 = 0;
+      for (let j = 0; j < p; j++) {
+        const centered = row[j] - means[j];
+        f1 += centered * v1[j];
+        f2 += centered * v2[j];
+      }
+      return [f1, f2];
+    };
+
+    const rawScores = matrix.map(project);
+    const rawCentroidScores = centroids.map(project);
+
+    // O sinal de cada componente principal é matematicamente arbitrário.
+    // A orientação abaixo segue a convenção automática usada por bibliotecas
+    // como o scikit-learn: em cada fator, a variável com maior carga absoluta
+    // recebe carga positiva. Assim, valores altos da variável dominante aparecem
+    // à direita no Fator 1 ou na parte superior no Fator 2.
+    const componentVectors = [v1, v2];
+    const dominantLoadingIndices = componentVectors.map(vector => {
+      let dominantIndex = 0;
+      for (let j = 1; j < vector.length; j++) {
+        if (Math.abs(vector[j]) > Math.abs(vector[dominantIndex])) {
+          dominantIndex = j;
+        }
+      }
+      return dominantIndex;
+    });
+
+    const directions = componentVectors.map((vector, axis) => {
+      const dominantIndex = dominantLoadingIndices[axis];
+      return vector[dominantIndex] < 0 ? -1 : 1;
+    });
+
+    const orient = score => [
+      score[0] * directions[0],
+      score[1] * directions[1]
+    ];
+
+    return {
+      scores: rawScores.map(orient),
+      centroidScores: rawCentroidScores.map(orient),
+      explained,
+      means,
+      loadings: [
+        v1.map(value => value * directions[0]),
+        v2.map(value => value * directions[1])
+      ],
+      dominantLoadingIndices
+    };
+  }
+
+  function jacobiEigen(input) {
+    const n = input.length;
+    if (n === 1) return { values: [input[0][0]], vectors: [[1]] };
+    const a = input.map(row => row.slice());
+    const v = identityMatrix(n);
+    const tolerance = 1e-10;
+    const maxIterations = 100 * n * n;
+
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      let p = 0;
+      let q = 1;
+      let max = Math.abs(a[p][q]);
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const value = Math.abs(a[i][j]);
+          if (value > max) {
+            max = value;
+            p = i;
+            q = j;
+          }
+        }
+      }
+      if (max < tolerance) break;
+
+      const app = a[p][p];
+      const aqq = a[q][q];
+      const apq = a[p][q];
+      const angle = 0.5 * Math.atan2(2 * apq, aqq - app);
+      const c = Math.cos(angle);
+      const s = Math.sin(angle);
+
+      for (let i = 0; i < n; i++) {
+        if (i !== p && i !== q) {
+          const aip = a[i][p];
+          const aiq = a[i][q];
+          a[i][p] = a[p][i] = c * aip - s * aiq;
+          a[i][q] = a[q][i] = s * aip + c * aiq;
+        }
+      }
+
+      a[p][p] = c * c * app - 2 * s * c * apq + s * s * aqq;
+      a[q][q] = s * s * app + 2 * s * c * apq + c * c * aqq;
+      a[p][q] = a[q][p] = 0;
+
+      for (let i = 0; i < n; i++) {
+        const vip = v[i][p];
+        const viq = v[i][q];
+        v[i][p] = c * vip - s * viq;
+        v[i][q] = s * vip + c * viq;
+      }
+    }
+
+    return { values: a.map((row, i) => row[i]), vectors: v };
+  }
+
+  function pairwiseDistances(matrix) {
+    const n = matrix.length;
+    const distances = Array.from({ length: n }, () => new Float64Array(n));
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const distance = Math.sqrt(squaredDistance(matrix[i], matrix[j]));
+        distances[i][j] = distance;
+        distances[j][i] = distance;
+      }
+    }
+    return distances;
+  }
+
+  function silhouetteFromDistanceMatrix(distances, labels, weights) {
+    const n = labels.length;
+    const groups = new Map();
+    labels.forEach((label, i) => {
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(i);
+    });
+
+    // Com menos de dois clusters presentes na amostra o coeficiente não é definido.
+    // Antes, o b permanecia infinito e a função devolvia NaN silenciosamente.
+    if (groups.size < 2) return null;
+
+    let total = 0;
+    let weightSum = 0;
+    for (let i = 0; i < n; i++) {
+      const w = weights ? weights[i] : 1;
+      const own = groups.get(labels[i]);
+      let s = 0;
+
+      // Ponto isolado no próprio cluster: contribuição 0, convenção do scikit-learn.
+      if (own.length > 1) {
+        let a = 0;
+        for (const j of own) if (j !== i) a += distances[i][j];
+        a /= own.length - 1;
+
+        let b = Infinity;
+        for (const [label, indices] of groups.entries()) {
+          if (label === labels[i]) continue;
+          let avg = 0;
+          for (const j of indices) avg += distances[i][j];
+          avg /= indices.length;
+          if (avg < b) b = avg;
+        }
+
+        // a = b = 0 ocorre com linhas idênticas divididas entre clusters.
+        // Antes, 0/0 contaminava toda a curva com NaN.
+        const denominator = Math.max(a, b);
+        if (denominator > 0) s = (b - a) / denominator;
+      }
+
+      total += w * s;
+      weightSum += w;
+    }
+    return weightSum > 0 ? total / weightSum : null;
+  }
+
+  // Amostra estratificada: garante que todo cluster não vazio esteja representado.
+  // A amostra aleatória simples anterior perdia clusters minúsculos (municípios
+  // atípicos em escala bruta) e o silhouette virava NaN sem qualquer aviso.
+  function stratifiedSampleIndices(labels, k, size, seed) {
+    const n = labels.length;
+    if (size >= n) return Array.from({ length: n }, (_, i) => i);
+
+    const groups = Array.from({ length: k }, () => []);
+    labels.forEach((label, i) => {
+      if (label >= 0 && label < k) groups[label].push(i);
+    });
+
+    const rng = mulberry32(seed);
+    const shuffled = groups.map(indices => {
+      const copy = indices.slice();
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    });
+
+    const nonEmpty = shuffled.filter(group => group.length > 0);
+    if (!nonEmpty.length) return [];
+
+    // Cota mínima por cluster para que nenhum desapareça da amostra.
+    const minimum = Math.max(1, Math.min(2, Math.floor(size / Math.max(1, nonEmpty.length))));
+    const quotas = shuffled.map(group => group.length ? Math.min(group.length, minimum) : 0);
+    let used = quotas.reduce((sum, value) => sum + value, 0);
+
+    // O restante é distribuído proporcionalmente ao tamanho real de cada cluster.
+    const remaining = Math.max(0, size - used);
+    if (remaining > 0) {
+      const eligible = shuffled.reduce((sum, group, c) => sum + (group.length - quotas[c]), 0);
+      if (eligible > 0) {
+        shuffled.forEach((group, c) => {
+          const available = group.length - quotas[c];
+          if (available <= 0) return;
+          const extra = Math.min(available, Math.floor(remaining * (available / eligible)));
+          quotas[c] += extra;
+          used += extra;
+        });
+        let c = 0;
+        while (used < size && c < shuffled.length * 4) {
+          const index = c % shuffled.length;
+          if (quotas[index] < shuffled[index].length) { quotas[index]++; used++; }
+          c++;
+        }
+      }
+    }
+
+    const picked = [];
+    shuffled.forEach((group, c) => { for (let i = 0; i < quotas[c]; i++) picked.push(group[i]); });
+    return picked.sort((a, b) => a - b);
+  }
+
+  // Silhouette exato sobre a base completa, sem materializar a matriz n×n:
+  // acumula, para cada ponto, a soma das distâncias a cada cluster (memória O(n·k)).
+  // Mesma definição do scikit-learn: pontos de cluster unitário contribuem com 0.
+  function silhouetteExact(matrix, labels, k) {
+    const n = matrix.length;
+    const counts = Array(k).fill(0);
+    for (let i = 0; i < n; i++) counts[labels[i]]++;
+    if (counts.filter(count => count > 0).length < 2) return null;
+
+    const sums = Array.from({ length: n }, () => new Float64Array(k));
+    for (let i = 0; i < n; i++) {
+      const rowI = matrix[i];
+      const sumI = sums[i];
+      const labelI = labels[i];
+      for (let j = i + 1; j < n; j++) {
+        const distance = Math.sqrt(squaredDistance(rowI, matrix[j]));
+        sumI[labels[j]] += distance;
+        sums[j][labelI] += distance;
+      }
+    }
+
+    let total = 0;
+    for (let i = 0; i < n; i++) {
+      const own = labels[i];
+      if (counts[own] <= 1) continue;
+      const a = sums[i][own] / (counts[own] - 1);
+      let b = Infinity;
+      for (let cluster = 0; cluster < k; cluster++) {
+        if (cluster === own || counts[cluster] === 0) continue;
+        const avg = sums[i][cluster] / counts[cluster];
+        if (avg < b) b = avg;
+      }
+      const denominator = Math.max(a, b);
+      if (denominator > 0) total += (b - a) / denominator;
+    }
+    return total / n;
+  }
+
+  // Silhouette exato de várias partições em um único passe O(n²): o custo
+  // dominante (as distâncias entre pares) é pago uma vez só e compartilhado por
+  // todos os valores de k da curva. Memória O(n · Σk).
+  async function silhouetteExactMulti(matrix, partitions, onProgress) {
+    const n = matrix.length;
+    const m = partitions.length;
+    const labelsList = partitions.map(p => Int32Array.from(p.labels));
+    const kList = partitions.map(p => p.k);
+    const counts = partitions.map((p, f) => {
+      const count = Array(p.k).fill(0);
+      labelsList[f].forEach(label => count[label]++);
+      return count;
+    });
+    const sums = partitions.map(p => new Float64Array(n * p.k));
+
+    // O laço cede o controle à interface por orçamento de PARES (não de linhas):
+    // as primeiras linhas concentram quase todos os pares e, sem isso, a página
+    // congela por vários segundos em máquinas mais lentas.
+    const YIELD_PAIRS = 300000;
+    const totalPairs = n * (n - 1) / 2;
+    let pairsDone = 0;
+    let pairsSinceYield = 0;
+
+    for (let i = 0; i < n; i++) {
+      const rowI = matrix[i];
+      for (let j = i + 1; j < n; j++) {
+        const distance = Math.sqrt(squaredDistance(rowI, matrix[j]));
+        for (let f = 0; f < m; f++) {
+          const k = kList[f];
+          const labels = labelsList[f];
+          const sum = sums[f];
+          sum[i * k + labels[j]] += distance;
+          sum[j * k + labels[i]] += distance;
+        }
+      }
+      const rowPairs = n - i - 1;
+      pairsDone += rowPairs;
+      pairsSinceYield += rowPairs;
+      if (pairsSinceYield >= YIELD_PAIRS) {
+        pairsSinceYield = 0;
+        if (onProgress) onProgress(pairsDone, totalPairs);
+        await yieldUI();
+      }
+    }
+
+    return partitions.map((p, f) => {
+      const count = counts[f];
+      if (count.filter(value => value > 0).length < 2) return null;
+      const labels = labelsList[f];
+      const sum = sums[f];
+      let total = 0;
+      for (let i = 0; i < n; i++) {
+        const own = labels[i];
+        if (count[own] <= 1) continue;
+        const base = i * p.k;
+        const a = sum[base + own] / (count[own] - 1);
+        let b = Infinity;
+        for (let cluster = 0; cluster < p.k; cluster++) {
+          if (cluster === own || count[cluster] === 0) continue;
+          const avg = sum[base + cluster] / count[cluster];
+          if (avg < b) b = avg;
+        }
+        const denominator = Math.max(a, b);
+        if (denominator > 0) total += (b - a) / denominator;
+      }
+      return total / n;
+    });
+  }
+
+  function silhouetteSampled(matrix, labels, k, size, seed) {
+    const sampleIndices = stratifiedSampleIndices(labels, k, Math.min(size, matrix.length), seed);
+    if (sampleIndices.length < 2) return { value: null, sampleSize: sampleIndices.length };
+
+    const sampleLabels = sampleIndices.map(i => labels[i]);
+
+    // Pesos de Horvitz-Thompson: cada ponto amostrado representa
+    // (tamanho real / tamanho amostrado) do seu cluster. Sem os pesos, a
+    // estratificação super-representa clusters pequenos e o coeficiente médio
+    // sai enviesado para cima em relação ao valor da base completa.
+    const trueSizes = Array(k).fill(0);
+    labels.forEach(label => { if (label >= 0 && label < k) trueSizes[label]++; });
+    const sampledSizes = Array(k).fill(0);
+    sampleLabels.forEach(label => { sampledSizes[label]++; });
+    const weights = sampleLabels.map(label => sampledSizes[label] > 0 ? trueSizes[label] / sampledSizes[label] : 0);
+
+    const distances = pairwiseDistances(sampleIndices.map(i => matrix[i]));
+    return {
+      value: silhouetteFromDistanceMatrix(distances, sampleLabels, weights),
+      sampleSize: sampleIndices.length
+    };
+  }
+
+
+  function invalidateLinkedTableModels() {
+    Object.values(state.results).forEach(result => {
+      if (result && !result.skipped) {
+        delete result.__linkedTableModel;
+        delete result.__linkedFilterCache;
+      }
+    });
+  }
+
+  function normalizeFilterText(value) {
+    return String(value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
+  function getTreatmentFilters() {
+    if (!state.tableFiltersByTreatment[state.activeTreatment]) {
+      state.tableFiltersByTreatment[state.activeTreatment] = {};
+    }
+    return state.tableFiltersByTreatment[state.activeTreatment];
+  }
+
+  function hasActiveColumnFilters() {
+    const filters = getTreatmentFilters();
+    return Object.values(filters).some(value => String(value ?? '').trim() !== '');
+  }
+
+  function parseFilterNumber(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+    let text = String(value ?? '').trim();
+    if (!text) return NaN;
+
+    text = text.replace(/\s/g, '');
+    if (text.includes(',') && text.includes('.')) {
+      if (text.lastIndexOf(',') > text.lastIndexOf('.')) {
+        text = text.replace(/\./g, '').replace(',', '.');
+      } else {
+        text = text.replace(/,/g, '');
+      }
+    } else if (text.includes(',')) {
+      text = text.replace(',', '.');
+    }
+
+    const number = Number(text);
+    return Number.isFinite(number) ? number : NaN;
+  }
+
+  function matchesLinkedFilter(value, column, rawQuery) {
+    const query = String(rawQuery ?? '').trim();
+    if (!query) return true;
+
+    if (column.type === 'text') {
+      return normalizeFilterText(value).includes(normalizeFilterText(query));
+    }
+
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return false;
+    const compact = query.replace(/\s/g, '');
+
+    const rangeMatch = compact.match(/^(.+)\.\.(.+)$/);
+    if (rangeMatch) {
+      const minimum = parseFilterNumber(rangeMatch[1]);
+      const maximum = parseFilterNumber(rangeMatch[2]);
+      if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) return false;
+      return numericValue >= Math.min(minimum, maximum) && numericValue <= Math.max(minimum, maximum);
+    }
+
+    const comparisonMatch = compact.match(/^(>=|<=|>|<|=)?(.+)$/);
+    if (!comparisonMatch) return false;
+
+    const operator = comparisonMatch[1] || '=';
+    const target = parseFilterNumber(comparisonMatch[2]);
+    if (!Number.isFinite(target)) return false;
+
+    if (operator === '>') return numericValue > target;
+    if (operator === '>=') return numericValue >= target;
+    if (operator === '<') return numericValue < target;
+    if (operator === '<=') return numericValue <= target;
+
+    const tolerance = Math.max(1e-9, Math.abs(target) * 1e-10);
+    return Math.abs(numericValue - target) <= tolerance;
+  }
+
+  function getLinkedTableModel(result) {
+    const nameCol = labelColumn.value;
+    const ufCol = ufColumn.value;
+    const codeCol = codeColumn.value;
+    const identifierCol = rowIdentifierColumn.value;
+    const signature = [
+      state.geojsonSource,
+      nameCol,
+      ufCol,
+      codeCol,
+      identifierCol,
+      result.features.join('|'),
+      result.rowIndices.length
+    ].join('::');
+
+    if (result.__linkedTableModel?.signature === signature) {
+      return result.__linkedTableModel;
+    }
+
+    const preliminaryRecords = result.rowIndices.map((sourceIndex, resultIndex) => {
+      const sourceRow = state.rows[sourceIndex];
+      const match = state.geojson && (nameCol || codeCol)
+        ? matchMunicipality(sourceRow, nameCol, ufCol, codeCol)
+        : { id: null, method: 'unavailable' };
+      const feature = match.id ? state.municipalityFeatureById.get(String(match.id)) : null;
+      const properties = feature?.properties || {};
+
+      return {
+        resultIndex,
+        sourceIndex,
+        cluster: result.labels[resultIndex],
+        mapId: match.id ? String(match.id) : '',
+        municipality: properties.__app_name
+          || (nameCol ? String(sourceRow[nameCol] ?? '') : ''),
+        uf: properties.__app_uf
+          || (ufCol ? String(sourceRow[ufCol] ?? '') : ''),
+        identifier: identifierCol
+          ? String(sourceRow[identifierCol] ?? '')
+          : `Linha ${sourceIndex + 2}`,
+        values: result.matrix[resultIndex]
+      };
+    });
+
+    const hasMapData = preliminaryRecords.some(record => record.mapId);
+    const columns = [];
+
+    if (hasMapData) {
+      columns.push({
+        key: '__municipality',
+        label: 'Município',
+        type: 'text',
+        getValue: record => record.municipality || record.identifier || 'Não associado'
+      });
+      columns.push({
+        key: '__uf',
+        label: 'UF',
+        type: 'text',
+        getValue: record => record.uf || ''
+      });
+    } else {
+      columns.push({
+        key: '__identifier',
+        label: identifierCol || 'Linha no Excel',
+        type: 'text',
+        getValue: record => record.identifier
+      });
+    }
+
+    result.features.forEach((feature, featureIndex) => {
+      columns.push({
+        key: `feature_${featureIndex}`,
+        label: feature,
+        type: 'number',
+        featureIndex,
+        getValue: record => record.values[featureIndex]
+      });
+    });
+
+    const model = {
+      signature,
+      hasMapData,
+      columns,
+      records: preliminaryRecords
+    };
+
+    result.__linkedTableModel = model;
+    delete result.__linkedFilterCache;
+    return model;
+  }
+
+  function getLinkedFilterState(result) {
+    const model = getLinkedTableModel(result);
+    const filters = getTreatmentFilters();
+    const activeClusters = Array.from(state.activeClusters).sort((a, b) => a - b);
+    const signature = JSON.stringify({
+      model: model.signature,
+      filters,
+      activeClusters
+    });
+
+    if (result.__linkedFilterCache?.signature === signature) {
+      return result.__linkedFilterCache;
+    }
+
+    const indices = [];
+    const countsByCluster = Array(result.requestedK).fill(0);
+
+    model.records.forEach(record => {
+      if (!state.activeClusters.has(record.cluster)) return;
+
+      const matches = model.columns.every(column => {
+        const query = filters[column.key];
+        if (!query) return true;
+        return matchesLinkedFilter(column.getValue(record), column, query);
+      });
+
+      if (matches) {
+        indices.push(record.resultIndex);
+        countsByCluster[record.cluster]++;
+      }
+    });
+
+    const filterState = {
+      signature,
+      indices,
+      indexSet: new Set(indices),
+      countsByCluster,
+      model,
+      hasColumnFilters: hasActiveColumnFilters()
+    };
+
+    result.__linkedFilterCache = filterState;
+    return filterState;
+  }
+
+  function renderLinkedDataTable(result) {
+    const filterState = getLinkedFilterState(result);
+    const model = filterState.model;
+    const filters = getTreatmentFilters();
+
+    let html = '<table class="linked-data-table"><thead>';
+    html += '<tr class="column-row">';
+    model.columns.forEach(column => {
+      html += `<th>${escapeHtml(column.label)}</th>`;
+    });
+    html += '</tr><tr class="filter-row">';
+
+    model.columns.forEach(column => {
+      const placeholder = column.type === 'number'
+        ? 'Ex.: >100 ou 10..20'
+        : 'Filtrar';
+      html += `<th><input class="column-filter" data-filter-key="${escapeHtml(column.key)}" type="text" value="${escapeHtml(filters[column.key] || '')}" placeholder="${escapeHtml(placeholder)}"></th>`;
+    });
+
+    html += '</tr></thead><tbody id="linkedTableBody"></tbody></table>';
+    linkedDataTable.innerHTML = html;
+
+    linkedDataTable.querySelectorAll('.column-filter').forEach(input => {
+      input.addEventListener('input', event => {
+        const key = event.target.dataset.filterKey;
+        getTreatmentFilters()[key] = event.target.value;
+        state.tablePageByTreatment[state.activeTreatment] = 0;
+        delete result.__linkedFilterCache;
+
+        clearTimeout(state.linkedFilterTimer);
+        state.linkedFilterTimer = setTimeout(() => {
+          renderLinkedTableBody(result);
+          rerenderFilteredChartsAndMap(result);
+        }, 220);
+      });
+    });
+
+    renderLinkedTableBody(result);
+  }
+
+  function renderLinkedTableBody(result) {
+    const filterState = getLinkedFilterState(result);
+    const { model, indices } = filterState;
+    const body = el('linkedTableBody');
+
+    if (!body) {
+      renderLinkedDataTable(result);
+      return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(indices.length / state.tablePageSize));
+    let page = state.tablePageByTreatment[state.activeTreatment] || 0;
+    page = Math.max(0, Math.min(totalPages - 1, page));
+    state.tablePageByTreatment[state.activeTreatment] = page;
+
+    const start = page * state.tablePageSize;
+    const end = Math.min(indices.length, start + state.tablePageSize);
+    const visibleIndices = indices.slice(start, end);
+
+    if (!visibleIndices.length) {
+      body.innerHTML = `<tr><td colspan="${model.columns.length}"><div class="linked-table-empty">Nenhuma observação atende aos filtros e aos clusters ativos.</div></td></tr>`;
+    } else {
+      body.innerHTML = visibleIndices.map(resultIndex => {
+        const record = model.records[resultIndex];
+        const color = COLORS[record.cluster % COLORS.length];
+        const cells = model.columns.map(column => {
+          const value = column.getValue(record);
+          const display = column.type === 'number'
+            ? formatNumber(value, 6)
+            : String(value ?? '');
+          return `<td>${escapeHtml(display)}</td>`;
+        }).join('');
+
+        return `<tr title="Cluster C${record.cluster}" style="border-left-color:${color}">${cells}</tr>`;
+      }).join('');
+    }
+
+    const activeClusterText = `${state.activeClusters.size} de ${result.requestedK} clusters ativos`;
+    const filterText = filterState.hasColumnFilters ? 'com filtros de coluna' : 'sem filtros de coluna';
+    const geographyText = model.hasMapData
+      ? 'Município e UF obtidos da malha municipal associada'
+      : `Primeira coluna: ${model.columns[0].label}`;
+
+    linkedTableSummary.textContent =
+      `${indices.length.toLocaleString('pt-BR')} de ${model.records.length.toLocaleString('pt-BR')} observações exibidas; ${activeClusterText}; ${filterText}. ${geographyText}. Valores na escala do tratamento selecionado.`;
+
+    linkedTablePageInfo.textContent = indices.length
+      ? `Página ${page + 1} de ${totalPages} · linhas ${start + 1}–${end}`
+      : 'Sem resultados';
+
+    linkedTablePrev.disabled = page <= 0;
+    linkedTableNext.disabled = page >= totalPages - 1;
+  }
+
+  function clearLinkedTableFilters() {
+    const result = state.results[state.activeTreatment];
+    if (!result || result.skipped) return;
+
+    state.tableFiltersByTreatment[state.activeTreatment] = {};
+    state.tablePageByTreatment[state.activeTreatment] = 0;
+    delete result.__linkedFilterCache;
+    renderLinkedDataTable(result);
+    rerenderFilteredChartsAndMap(result);
+  }
+
+  function changeLinkedTablePage(direction) {
+    const result = state.results[state.activeTreatment];
+    if (!result || result.skipped) return;
+
+    const filterState = getLinkedFilterState(result);
+    const totalPages = Math.max(1, Math.ceil(filterState.indices.length / state.tablePageSize));
+    const current = state.tablePageByTreatment[state.activeTreatment] || 0;
+    state.tablePageByTreatment[state.activeTreatment] = Math.max(0, Math.min(totalPages - 1, current + direction));
+    renderLinkedTableBody(result);
+  }
+
+  function rerenderFilteredChartsAndMap(result) {
+    renderFactors(result);
+    renderLineChart(result);
+    renderMap(result);
+  }
+
+  function meanRowsForIndices(matrix, indices, featureCount) {
+    if (!indices.length) return null;
+    const mean = Array(featureCount).fill(0);
+    indices.forEach(index => {
+      for (let j = 0; j < featureCount; j++) mean[j] += matrix[index][j];
+    });
+    return mean.map(value => value / indices.length);
+  }
+
+  function projectPointToPCA(point, pca) {
+    return [0, 1].map(axis => {
+      let value = 0;
+      for (let j = 0; j < point.length; j++) {
+        value += (point[j] - pca.means[j]) * pca.loadings[axis][j];
+      }
+      return value;
+    });
+  }
+
+  function colorWithAlpha(hexColor, alpha = 0.10) {
+    const hex = String(hexColor || '').replace('#', '').trim();
+    if (!/^[0-9a-fA-F]{6}$/.test(hex)) return `rgba(0,0,0,${alpha})`;
+
+    const red = parseInt(hex.slice(0, 2), 16);
+    const green = parseInt(hex.slice(2, 4), 16);
+    const blue = parseInt(hex.slice(4, 6), 16);
+    return `rgba(${red},${green},${blue},${alpha})`;
+  }
+
+  function isClusterActive(cluster) {
+    return state.activeClusters.has(cluster);
+  }
+
+  function buildClusterVisibilityControls(k) {
+    const panel = el('clusterVisibilityPanel');
+    panel.hidden = false;
+    panel.innerHTML = '';
+
+    const head = document.createElement('div');
+    head.className = 'cluster-visibility-head';
+
+    const titleWrap = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'cluster-visibility-title';
+    title.textContent = 'Exibição simultânea dos clusters';
+
+    const summary = document.createElement('div');
+    summary.id = 'clusterVisibilitySummary';
+    summary.className = 'cluster-visibility-summary';
+
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(summary);
+
+    const actions = document.createElement('div');
+    actions.className = 'cluster-visibility-actions';
+
+    const activateAll = document.createElement('button');
+    activateAll.type = 'button';
+    activateAll.className = 'btn-secondary';
+    activateAll.textContent = 'Ativar todos';
+    activateAll.addEventListener('click', () => {
+      state.activeClusters = new Set(Array.from({ length: k }, (_, cluster) => cluster));
+      syncClusterVisibilityControls(k);
+      rerenderClusterVisuals();
+    });
+
+    const deactivateAll = document.createElement('button');
+    deactivateAll.type = 'button';
+    deactivateAll.className = 'btn-secondary';
+    deactivateAll.textContent = 'Desativar todos';
+    deactivateAll.addEventListener('click', () => {
+      state.activeClusters = new Set();
+      syncClusterVisibilityControls(k);
+      rerenderClusterVisuals();
+    });
+
+    actions.appendChild(activateAll);
+    actions.appendChild(deactivateAll);
+    head.appendChild(titleWrap);
+    head.appendChild(actions);
+
+    const controls = document.createElement('div');
+    controls.id = 'clusterVisibilityControls';
+    controls.className = 'cluster-visibility-controls';
+
+    for (let cluster = 0; cluster < k; cluster++) {
+      const color = COLORS[cluster % COLORS.length];
+      const label = document.createElement('label');
+      label.className = 'cluster-toggle';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.cluster = String(cluster);
+      checkbox.checked = isClusterActive(cluster);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) state.activeClusters.add(cluster);
+        else state.activeClusters.delete(cluster);
+        updateClusterVisibilitySummary(k);
+        rerenderClusterVisuals();
+      });
+
+      const swatch = document.createElement('span');
+      swatch.className = 'cluster-toggle-swatch';
+      swatch.style.background = color;
+      swatch.style.border = '1px solid #8b8f94';
+
+      const text = document.createElement('span');
+      text.textContent = `C${cluster}`;
+
+      label.appendChild(checkbox);
+      label.appendChild(swatch);
+      label.appendChild(text);
+      controls.appendChild(label);
+    }
+
+    const extraOption = document.createElement('label');
+    extraOption.className = 'cluster-visibility-extra';
+
+    const resizeCheckbox = document.createElement('input');
+    resizeCheckbox.type = 'checkbox';
+    resizeCheckbox.id = 'resizeLineChartByVisibleClusters';
+    resizeCheckbox.checked = Boolean(state.resizeLineChartByVisibleClusters);
+    resizeCheckbox.addEventListener('change', () => {
+      state.resizeLineChartByVisibleClusters = resizeCheckbox.checked;
+      updateClusterVisibilitySummary(k);
+      rerenderClusterVisuals();
+    });
+
+    const extraText = document.createElement('span');
+    extraText.textContent = 'Redimensionar eixo Y do gráfico de linha';
+
+    extraOption.appendChild(resizeCheckbox);
+    extraOption.appendChild(extraText);
+    controls.appendChild(extraOption);
+
+    const centroidOption = document.createElement('label');
+    centroidOption.className = 'cluster-visibility-extra';
+
+    const centroidCheckbox = document.createElement('input');
+    centroidCheckbox.type = 'checkbox';
+    centroidCheckbox.id = 'showCentroidsInFactorChart';
+    centroidCheckbox.checked = Boolean(state.showCentroidsInFactorChart);
+    centroidCheckbox.addEventListener('change', () => {
+      state.showCentroidsInFactorChart = centroidCheckbox.checked;
+      updateClusterVisibilitySummary(k);
+      rerenderClusterVisuals();
+    });
+
+    const centroidText = document.createElement('span');
+    centroidText.textContent = 'Mostrar X do centroide na projeção fatorial';
+
+    centroidOption.appendChild(centroidCheckbox);
+    centroidOption.appendChild(centroidText);
+    controls.appendChild(centroidOption);
+
+    panel.appendChild(head);
+    panel.appendChild(controls);
+    updateClusterVisibilitySummary(k);
+  }
+
+  function syncClusterVisibilityControls(k) {
+    const controls = el('clusterVisibilityControls');
+    if (!controls) return;
+
+    controls.querySelectorAll('input[data-cluster]').forEach(input => {
+      const cluster = Number(input.dataset.cluster);
+      input.checked = state.activeClusters.has(cluster);
+    });
+
+    const resizeInput = el('resizeLineChartByVisibleClusters');
+    if (resizeInput) resizeInput.checked = Boolean(state.resizeLineChartByVisibleClusters);
+
+    const centroidInput = el('showCentroidsInFactorChart');
+    if (centroidInput) centroidInput.checked = Boolean(state.showCentroidsInFactorChart);
+
+    updateClusterVisibilitySummary(k);
+  }
+
+  function updateClusterVisibilitySummary(k) {
+    const summary = el('clusterVisibilitySummary');
+    if (!summary) return;
+
+    const activeCount = state.activeClusters.size;
+    const resizeText = state.resizeLineChartByVisibleClusters
+      ? 'O eixo Y do gráfico de linha é redimensionado conforme os clusters visíveis.'
+      : 'O eixo Y do gráfico de linha mantém a escala completa do tratamento.';
+    const centroidText = state.showCentroidsInFactorChart
+      ? 'O X do centroide está visível na projeção fatorial.'
+      : 'O X do centroide está oculto na projeção fatorial.';
+    summary.textContent = `${activeCount} de ${k} clusters ativos. A seleção é aplicada à tabela, ao gráfico fatorial, ao perfil dos centroides e ao mapa, sem recalcular o K-means. ${resizeText} ${centroidText}`;
+  }
+
+  function rerenderClusterVisuals() {
+    const result = state.results[state.activeTreatment];
+    if (!result || result.skipped) return;
+
+    delete result.__linkedFilterCache;
+    renderLinkedTableBody(result);
+    rerenderFilteredChartsAndMap(result);
+  }
+
+  function buildTabs() {
+    const tabs = el('tabs');
+    tabs.innerHTML = '';
+    TREATMENTS.forEach(treatment => {
+      const result = state.results[treatment.key];
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'tab-btn' + (state.activeTreatment === treatment.key ? ' active' : '');
+      button.textContent = result?.skipped ? `${treatment.short} (indisponível)` : treatment.short;
+      button.disabled = !result || result.skipped;
+      button.addEventListener('click', () => {
+        state.activeTreatment = treatment.key;
+        tabs.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+        renderActiveTreatment();
+      });
+      tabs.appendChild(button);
+    });
+  }
+
+  function renderActiveTreatment() {
+    const result = state.results[state.activeTreatment];
+    if (!result || result.skipped) return;
+
+    el('methodBadge').textContent = result.descriptor.short;
+    el('resultSubtitle').textContent = `${result.descriptor.name}. Centroides apresentados na escala correspondente ao tratamento.`;
+    renderSummary(result);
+    renderCentroidTable(result);
+    renderElbow(result);
+    renderSilhouette(result);
+    renderLinkedDataTable(result);
+    renderFactors(result);
+    renderLineChart(result);
+    renderMap(result);
+    renderNotes(result);
+  }
+
+  function renderSummary(result) {
+    const silhouette = silhouetteAtRequestedK(result);
+    const clusterSizes = result.clusterSizes;
+    const nonEmpty = clusterSizes.filter(size => size > 0);
+    const smallest = nonEmpty.length ? Math.min(...nonEmpty) : 0;
+    const largest = clusterSizes.length ? Math.max(...clusterSizes) : 0;
+
+    const metrics = [
+      { value: result.validRows.toLocaleString('pt-BR'), label: 'Linhas clusterizadas' },
+      {
+        value: result.emptyClusters
+          ? `${nonEmpty.length} de ${result.requestedK}`
+          : result.requestedK.toLocaleString('pt-BR'),
+        label: result.emptyClusters ? 'Clusters obtidos (houve cluster vazio)' : 'Clusters'
+      },
+      { value: formatNumber(result.sse, 4), label: 'SSE do modelo final' },
+      {
+        value: silhouette === null || !Number.isFinite(silhouette) ? 'Não definido' : formatNumber(silhouette, 4),
+        label: `Silhouette em k=${result.requestedK}`
+      },
+      { value: result.removedRows.toLocaleString('pt-BR'), label: 'Linhas removidas pelo tratamento' },
+      { value: result.missingRows.toLocaleString('pt-BR'), label: 'Linhas incompletas ignoradas' },
+      { value: smallest.toLocaleString('pt-BR'), label: 'Menor cluster' },
+      { value: largest.toLocaleString('pt-BR'), label: 'Maior cluster' }
+    ];
+
+    el('summaryGrid').innerHTML = metrics.map(metric => `<div class="metric"><div class="value">${metric.value}</div><div class="label">${metric.label}</div></div>`).join('');
+  }
+
+  function silhouetteAtRequestedK(result) {
+    const index = result.diagnostics.kValues.indexOf(result.requestedK);
+    return index >= 0 ? result.diagnostics.silhouetteValues[index] : null;
+  }
+
+  function renderCentroidTable(result) {
+    let html = '<table><thead><tr><th>Cluster</th><th>Quantidade</th><th>Participação</th>';
+    result.features.forEach(feature => { html += `<th>${escapeHtml(feature)}</th>`; });
+    html += '</tr></thead><tbody>';
+    const counts = result.clusterSizes;
+    const total = counts.reduce((sum, value) => sum + value, 0) || 1;
+    result.centroids.forEach((centroid, c) => {
+      const vazio = counts[c] === 0;
+      html += `<tr${vazio ? ' style="opacity:.55"' : ''}><td>C${c}${vazio ? ' (vazio)' : ''}</td>`
+        + `<td>${counts[c].toLocaleString('pt-BR')}</td>`
+        + `<td>${formatPercent(counts[c] / total)}</td>`;
+      centroid.forEach(value => { html += `<td>${formatNumber(value, 6)}</td>`; });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    el('centroidTable').innerHTML = html;
+  }
+
+  function baseLayout(titleX, titleY) {
+    return {
+      margin: { l: 70, r: 20, t: 24, b: 62 },
+      paper_bgcolor: '#ffffff',
+      plot_bgcolor: '#ffffff',
+      font: { family: 'Inter, Segoe UI, sans-serif', size: 12, color: '#27364d' },
+      xaxis: { title: titleX, gridcolor: '#dbe3ee', zerolinecolor: '#c9d2df', automargin: true },
+      yaxis: { title: titleY, gridcolor: '#dbe3ee', zerolinecolor: '#c9d2df', automargin: true },
+      hovermode: 'closest'
+    };
+  }
+
+  function renderElbow(result) {
+    const trace = {
+      x: result.diagnostics.kValues,
+      y: result.diagnostics.sseValues,
+      mode: 'lines+markers',
+      line: { color: '#111827', width: 2 },
+      marker: { color: '#111827', size: 7 },
+      hovertemplate: 'k=%{x}<br>SSE=%{y:.6g}<extra></extra>'
+    };
+    const layout = baseLayout('Número de clusters', 'SSE');
+    layout.shapes = [{ type: 'line', x0: result.requestedK, x1: result.requestedK, y0: 0, y1: 1, yref: 'paper', line: { color: '#155eef', dash: 'dot' } }];
+    Plotly.react('elbowChart', [trace], layout, PLOT_CONFIG);
+  }
+
+  function renderSilhouette(result) {
+    const x = [];
+    const y = [];
+    result.diagnostics.kValues.forEach((k, i) => {
+      const value = result.diagnostics.silhouetteValues[i];
+      if (value !== null) {
+        x.push(k);
+        y.push(value);
+      }
+    });
+    const trace = {
+      x, y,
+      mode: 'lines+markers',
+      line: { color: '#111827', width: 2 },
+      marker: { color: '#111827', size: 7 },
+      hovertemplate: 'k=%{x}<br>Silhouette=%{y:.4f}<extra></extra>'
+    };
+    const layout = baseLayout('Número de clusters', 'Coeficiente silhouette médio');
+    layout.shapes = [{ type: 'line', x0: result.requestedK, x1: result.requestedK, y0: 0, y1: 1, yref: 'paper', line: { color: '#155eef', dash: 'dot' } }];
+    Plotly.react('silhouetteChart', [trace], layout, PLOT_CONFIG);
+  }
+
+  function renderFactors(result) {
+    const pointTraces = [];
+    const centroidFrontTraces = [];
+    const rowIdCol = rowIdentifierColumn.value;
+    const ufCol = ufColumn.value;
+    const identifierLabel = rowIdCol || 'Linha da planilha';
+    const filterState = getLinkedFilterState(result);
+    const clusterIndices = Array.from({ length: result.requestedK }, () => []);
+
+    // A orientação já é definida automaticamente no cálculo da PCA.
+    const displayPoint = point => [point[0], point[1]];
+    const displayedScores = result.pca.scores.map(displayPoint);
+
+    filterState.indices.forEach(index => {
+      clusterIndices[result.labels[index]].push(index);
+    });
+
+    clusterIndices.forEach((indices, cluster) => {
+      const color = COLORS[cluster % COLORS.length];
+      const active = isClusterActive(cluster) && indices.length > 0;
+
+      pointTraces.push({
+        type: 'scatter',
+        mode: 'markers',
+        name: `C${cluster}`,
+        legendgroup: `cluster-${cluster}`,
+        legendrank: cluster + 10,
+        meta: { cluster },
+        visible: active ? true : 'legendonly',
+        x: indices.map(i => displayedScores[i][0]),
+        y: indices.map(i => displayedScores[i][1]),
+        customdata: indices.map(i => {
+          const originalRow = state.rows[result.rowIndices[i]];
+          const identifierValue = rowIdCol
+            ? String(originalRow[rowIdCol] ?? '')
+            : `Linha ${result.rowIndices[i] + 2}`;
+          const ufValue = ufCol ? String(originalRow[ufCol] ?? '') : '';
+          return [identifierLabel, identifierValue, ufValue, result.rowIndices[i] + 2];
+        }),
+        marker: {
+          size: 8,
+          color,
+          opacity: 0.82,
+          line: { color: '#ffffff', width: 0.35 }
+        },
+        hovertemplate:
+          '<b>%{customdata[0]}: %{customdata[1]}</b>' +
+          (ufCol ? '<br>UF: %{customdata[2]}' : '') +
+          '<br>Cluster C' + cluster +
+          '<br>Fator 1: %{x:.6g}' +
+          '<br>Fator 2: %{y:.6g}' +
+          '<br>Linha no Excel: %{customdata[3]}' +
+          '<extra></extra>'
+      });
+
+      if (!state.showCentroidsInFactorChart) return;
+
+      const representative = filterState.hasColumnFilters
+        ? meanRowsForIndices(result.matrix, indices, result.features.length)
+        : result.centroids[cluster];
+      const representativeScore = representative
+        ? projectPointToPCA(representative, result.pca)
+        : null;
+      const displayedRepresentativeScore = representativeScore
+        ? displayPoint(representativeScore)
+        : null;
+
+      const centroidName = filterState.hasColumnFilters
+        ? `Média filtrada C${cluster}`
+        : `Centroide C${cluster}`;
+
+      centroidFrontTraces.push({
+        type: 'scatter',
+        mode: 'markers',
+        name: centroidName,
+        legendgroup: 'centroides',
+        legendrank: 1,
+        showlegend: cluster === 0,
+        meta: { cluster },
+        visible: active && Boolean(displayedRepresentativeScore),
+        x: displayedRepresentativeScore ? [displayedRepresentativeScore[0]] : [],
+        y: displayedRepresentativeScore ? [displayedRepresentativeScore[1]] : [],
+        text: [centroidName],
+        marker: {
+          size: 14,
+          color: '#000000',
+          symbol: 'x',
+          line: { color: 'rgba(0,0,0,0)', width: 0 }
+        },
+        hovertemplate: '<b>%{text}</b><br>Fator 1: %{x:.6g}<br>Fator 2: %{y:.6g}<extra></extra>'
+      });
+    });
+
+    const traces = state.showCentroidsInFactorChart
+      ? [...pointTraces, ...centroidFrontTraces]
+      : pointTraces;
+
+    const layout = baseLayout(
+      `Fator 1 (${formatPercent(result.pca.explained[0])})`,
+      `Fator 2 (${formatPercent(result.pca.explained[1])})`
+    );
+    layout.margin = { l: 76, r: 24, t: 64, b: 68 };
+    layout.legend = {
+      orientation: 'h',
+      x: 0.5,
+      xanchor: 'center',
+      y: 1.04,
+      yanchor: 'bottom',
+      itemclick: false,
+      itemdoubleclick: false,
+      traceorder: 'normal'
+    };
+    layout.xaxis.zeroline = true;
+    layout.xaxis.zerolinewidth = 1.2;
+    layout.xaxis.zerolinecolor = '#6b7280';
+    layout.yaxis.zeroline = true;
+    layout.yaxis.zerolinewidth = 1.2;
+    layout.yaxis.zerolinecolor = '#6b7280';
+
+    Plotly.react('factorChart', traces, layout, PLOT_CONFIG);
+  }
+
+  function renderLineChart(result) {
+    const filterState = getLinkedFilterState(result);
+    const profiles = [];
+    const profileLabels = [];
+    const visibleProfileFlags = [];
+
+    for (let cluster = 0; cluster < result.requestedK; cluster++) {
+      const indices = filterState.indices.filter(index => result.labels[index] === cluster);
+      const profile = filterState.hasColumnFilters
+        ? meanRowsForIndices(result.matrix, indices, result.features.length)
+        : result.centroids[cluster];
+
+      const hasVisibleRows = filterState.countsByCluster[cluster] > 0;
+      const isVisible = isClusterActive(cluster) && hasVisibleRows && Boolean(profile);
+
+      profiles.push(profile);
+      profileLabels.push(filterState.hasColumnFilters ? 'Média filtrada' : 'Centroide');
+      visibleProfileFlags.push(isVisible);
+    }
+
+    el('lineChartTitle').textContent = filterState.hasColumnFilters
+      ? 'Perfil médio das linhas filtradas'
+      : 'Perfil dos centroides';
+
+    const traces = profiles.map((profile, cluster) => {
+      const color = COLORS[cluster % COLORS.length];
+      const isVisible = visibleProfileFlags[cluster];
+
+      return {
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: `C${cluster}`,
+        legendgroup: `cluster-${cluster}`,
+        meta: { cluster },
+        visible: isVisible ? true : 'legendonly',
+        x: result.features,
+        y: profile || result.features.map(() => null),
+        line: { width: 2, color },
+        marker: {
+          size: 7,
+          color
+        },
+        hovertemplate: `${profileLabels[cluster]} C${cluster}<br>%{x}<br>%{y:.6g}<extra></extra>`
+      };
+    });
+
+    // Quando a opção estiver marcada, o eixo Y considera apenas os clusters visíveis.
+    // Caso contrário, a escala permanece baseada em todos os perfis disponíveis no tratamento.
+    const profilesForScale = state.resizeLineChartByVisibleClusters
+      ? profiles.map((profile, cluster) => visibleProfileFlags[cluster] ? profile : null)
+      : profiles;
+
+    const finiteValues = profilesForScale
+      .filter(Boolean)
+      .flat()
+      .filter(value => Number.isFinite(value));
+
+    let yRange;
+    if (finiteValues.length) {
+      const minValue = Math.min(...finiteValues);
+      const maxValue = Math.max(...finiteValues);
+      const amplitude = maxValue - minValue;
+      const reference = amplitude > 0 ? amplitude : Math.max(Math.abs(maxValue), 1);
+      const padding = reference * 0.12;
+      const lowerLimit = minValue >= 0 ? 0 : minValue - padding;
+      const upperLimit = maxValue + padding;
+      yRange = [lowerLimit, upperLimit];
+    }
+
+    const layout = baseLayout(
+      'Variáveis',
+      filterState.hasColumnFilters ? 'Média das linhas filtradas' : 'Valor do centroide'
+    );
+    layout.margin = { l: 78, r: 30, t: 72, b: 125 };
+    layout.legend = {
+      orientation: 'h',
+      x: 0.5,
+      xanchor: 'center',
+      y: 1.04,
+      yanchor: 'bottom',
+      itemclick: false,
+      itemdoubleclick: false
+    };
+    layout.xaxis.tickangle = -35;
+    layout.xaxis.automargin = true;
+    layout.yaxis.automargin = true;
+
+    // Quando há uma faixa calculada, o autorange precisa ficar desativado.
+    // Caso contrário, o Plotly ignora a faixa completa e recalcula o eixo
+    // apenas com base nos traços visíveis.
+    if (yRange) {
+      layout.yaxis.autorange = false;
+      layout.yaxis.range = yRange;
+    } else {
+      layout.yaxis.autorange = true;
+      delete layout.yaxis.range;
+    }
+
+    Plotly.react('lineChart', traces, layout, PLOT_CONFIG);
+  }
+
+
+  function renderMap(result) {
+    const latCol = latColumn.value;
+    const lonCol = lonColumn.value;
+    const nameCol = labelColumn.value;
+    const rowIdCol = rowIdentifierColumn.value;
+    const ufCol = ufColumn.value;
+    const codeCol = codeColumn.value;
+    const mapDiv = el('mapChart');
+
+    mapStats.textContent = '';
+
+    if (state.geojson && (nameCol || codeCol)) {
+      renderMunicipalityChoropleth(result, nameCol, ufCol, codeCol);
+      return;
+    }
+
+    if (!state.geojson && !state.geojsonLoadError && (nameCol || codeCol)) {
+      Plotly.purge(mapDiv);
+      mapDiv.innerHTML = '<div class="map-message">A malha municipal está sendo carregada. O mapa será atualizado automaticamente.</div>';
+      return;
+    }
+
+    if (latCol && lonCol) {
+      const traces = [];
+      const allLat = [];
+      const allLon = [];
+      for (let cluster = 0; cluster < result.requestedK; cluster++) {
+        const lat = [];
+        const lon = [];
+        const text = [];
+        const filterState = getLinkedFilterState(result);
+        filterState.indices.forEach(i => {
+          const label = result.labels[i];
+          if (label !== cluster) return;
+          const row = state.rows[result.rowIndices[i]];
+          const latValue = toNumber(row[latCol]);
+          const lonValue = toNumber(row[lonCol]);
+          if (!Number.isFinite(latValue) || !Number.isFinite(lonValue)) return;
+          lat.push(latValue);
+          lon.push(lonValue);
+          allLat.push(latValue);
+          allLon.push(lonValue);
+          text.push(rowIdCol ? String(row[rowIdCol] ?? '') : `Linha ${result.rowIndices[i] + 2}`);
+        });
+        traces.push({
+          type: 'scattergeo',
+          mode: 'markers',
+          name: `C${cluster}`,
+          lat, lon, text,
+          meta: { cluster },
+          visible: isClusterActive(cluster) ? true : 'legendonly',
+          marker: {
+            size: 6,
+            color: COLORS[cluster % COLORS.length],
+            opacity: 0.82,
+            line: { color: '#ffffff', width: 0.3 }
+          },
+          hovertemplate: '%{text}<br>Cluster C' + cluster + '<extra></extra>'
+        });
+      }
+      const latMin = allLat.length ? Math.min(...allLat) : -35;
+      const latMax = allLat.length ? Math.max(...allLat) : 6;
+      const lonMin = allLon.length ? Math.min(...allLon) : -75;
+      const lonMax = allLon.length ? Math.max(...allLon) : -32;
+      const latPad = Math.max(1, (latMax - latMin) * 0.08);
+      const lonPad = Math.max(1, (lonMax - lonMin) * 0.08);
+      Plotly.react(mapDiv, traces, {
+        margin: { l: 10, r: 10, t: 10, b: 10 },
+        paper_bgcolor: '#ffffff',
+        geo: {
+          scope: 'south america',
+          projection: { type: 'mercator' },
+          lataxis: { range: [latMin - latPad, latMax + latPad] },
+          lonaxis: { range: [lonMin - lonPad, lonMax + lonPad] },
+          showland: true,
+          landcolor: '#eef2f6',
+          showocean: true,
+          oceancolor: '#e7f2fb',
+          showcountries: true,
+          countrycolor: '#9baabd',
+          showlakes: true,
+          lakecolor: '#e7f2fb'
+        },
+        legend: { orientation: 'h', y: 1.03, itemclick: false, itemdoubleclick: false }
+      }, PLOT_CONFIG);
+      const coordinateFilterState = getLinkedFilterState(result);
+      mapStats.textContent = `Mapa gerado por coordenadas com ${coordinateFilterState.indices.length.toLocaleString('pt-BR')} linhas atendendo aos filtros da tabela.`;
+      return;
+    }
+
+    Plotly.purge(mapDiv);
+    if (state.geojsonLoadError) {
+      mapDiv.innerHTML = '<div class="map-message">A malha municipal não foi carregada. Verifique a conexão com a internet. Como alternativa, selecione colunas de latitude e longitude.</div>';
+    } else {
+      mapDiv.innerHTML = '<div class="map-message">Selecione a coluna que contém o nome do município. A coluna da UF é recomendada para evitar ambiguidades entre municípios homônimos.</div>';
+    }
+  }
+
+  function renderMunicipalityChoropleth(result, nameCol, ufCol, codeCol) {
+    const assignments = new Map();
+    let matchedByNameUf = 0;
+    let matchedByName = 0;
+    let matchedByCode = 0;
+    let ambiguous = 0;
+    let ufMismatch = 0;
+    let notFound = 0;
+    let duplicateRows = 0;
+    let conflictingRows = 0;
+    let codeEmpty = 0;
+    const unmatchedSamples = [];
+
+    const filterState = getLinkedFilterState(result);
+
+    filterState.indices.forEach(i => {
+      const cluster = result.labels[i];
+      const row = state.rows[result.rowIndices[i]];
+
+      if (codeCol) {
+        const codeValue = row[codeCol];
+        if (codeValue === null || codeValue === undefined || String(codeValue).trim() === '') codeEmpty++;
+      }
+
+      const match = matchMunicipality(row, nameCol, ufCol, codeCol);
+      if (!match.id) {
+        if (match.method === 'ambiguous') ambiguous++;
+        else if (match.method === 'uf_mismatch') ufMismatch++;
+        else notFound++;
+        if (unmatchedSamples.length < 3) {
+          const nameValue = nameCol ? String(row[nameCol] ?? '').trim() : '';
+          const codeValue = codeCol ? String(row[codeCol] ?? '').trim() : '';
+          const sample = [nameValue, codeValue ? `cód. ${codeValue}` : ''].filter(Boolean).join(' / ');
+          if (sample) unmatchedSamples.push(sample);
+        }
+        return;
+      }
+
+      if (match.method === 'name_uf') matchedByNameUf++;
+      else if (match.method === 'name') matchedByName++;
+      else if (match.method === 'code') matchedByCode++;
+
+      if (assignments.has(match.id)) {
+        duplicateRows++;
+        if (assignments.get(match.id).cluster !== cluster) conflictingRows++;
+        return;
+      }
+
+      assignments.set(match.id, {
+        cluster,
+        sourceName: nameCol ? String(row[nameCol] ?? '') : '',
+        rowNumber: result.rowIndices[i] + 2
+      });
+    });
+
+    const clusterFeatures = Array.from({ length: result.requestedK }, () => []);
+    const noDataFeatures = [];
+
+    state.geojson.features.forEach(feature => {
+      const id = String(feature.id);
+      const assignment = assignments.get(id);
+      if (assignment) clusterFeatures[assignment.cluster].push(feature);
+      else noDataFeatures.push(feature);
+    });
+
+    const traces = [];
+
+    traces.push({
+      type: 'choropleth',
+      geojson: state.geojson,
+      featureidkey: 'id',
+      locations: state.geojson.features.map(feature => String(feature.id)),
+      z: state.geojson.features.map(() => 1),
+      zmin: 0,
+      zmax: 1,
+      colorscale: [[0, 'rgba(255,255,255,0.01)'], [1, 'rgba(255,255,255,0.01)']],
+      showscale: false,
+      showlegend: false,
+      hoverinfo: 'skip',
+      marker: {
+        line: {
+          color: '#b7bec8',
+          width: 0.28
+        }
+      }
+    });
+
+    clusterFeatures.forEach((features, cluster) => {
+      if (!features.length) return;
+
+      const color = COLORS[cluster % COLORS.length];
+      const locations = [];
+      const text = [];
+      const customdata = [];
+
+      features.forEach(feature => {
+        const properties = feature.properties || {};
+        const municipalityName = properties.__app_name || 'Município';
+        const uf = properties.__app_uf || '';
+        const code = properties.__app_code || '';
+
+        locations.push(String(feature.id));
+        text.push(uf ? `${municipalityName} - ${uf}` : municipalityName);
+        customdata.push([`Cluster C${cluster}`, code || 'Não informado']);
+      });
+
+      traces.push({
+        type: 'choropleth',
+        geojson: { type: 'FeatureCollection', features },
+        featureidkey: 'id',
+        locations,
+        z: locations.map(() => 1),
+        text,
+        customdata,
+        meta: { cluster },
+        visible: isClusterActive(cluster),
+        zmin: 0,
+        zmax: 1,
+        colorscale: [
+          [0, color],
+          [1, color]
+        ],
+        showscale: false,
+        showlegend: false,
+        marker: {
+          line: {
+            color: '#9fa4aa',
+            width: 0.35
+          }
+        },
+        hovertemplate:
+          '<b>%{text}</b>' +
+          '<br>%{customdata[0]}' +
+          '<br>Código IBGE: %{customdata[1]}' +
+          '<extra></extra>'
+      });
+    });
+
+    if (noDataFeatures.length) {
+      const noDataLocations = [];
+      const noDataText = [];
+      const noDataCustom = [];
+
+      noDataFeatures.forEach(feature => {
+        const properties = feature.properties || {};
+        const municipalityName = properties.__app_name || 'Município';
+        const uf = properties.__app_uf || '';
+        const code = properties.__app_code || '';
+
+        noDataLocations.push(String(feature.id));
+        noDataText.push(uf ? `${municipalityName} - ${uf}` : municipalityName);
+        noDataCustom.push(['Sem dados', code || 'Não informado']);
+      });
+
+      traces.push({
+        type: 'choropleth',
+        geojson: { type: 'FeatureCollection', features: noDataFeatures },
+        featureidkey: 'id',
+        locations: noDataLocations,
+        z: noDataLocations.map(() => 1),
+        text: noDataText,
+        customdata: noDataCustom,
+        zmin: 0,
+        zmax: 1,
+        colorscale: [
+          [0, MAP_NO_DATA_COLOR],
+          [1, MAP_NO_DATA_COLOR]
+        ],
+        showscale: false,
+        showlegend: false,
+        marker: {
+          line: {
+            color: '#9fa4aa',
+            width: 0.35
+          }
+        },
+        hovertemplate:
+          '<b>%{text}</b>' +
+          '<br>Sem dados' +
+          '<br>Código IBGE: %{customdata[1]}' +
+          '<extra></extra>'
+      });
+    }
+
+    const legendItems = [
+      ...Array.from({ length: result.requestedK }, (_, cluster) => ({
+        label: `C${cluster}`,
+        color: COLORS[cluster % COLORS.length],
+        active: isClusterActive(cluster)
+      })).filter(item => item.active),
+      { label: 'Sem dados', color: MAP_NO_DATA_COLOR, active: true, noData: true }
+    ];    const legend = buildMapLegend(legendItems);
+
+    Plotly.react('mapChart', traces, {
+      margin: { l: 6, r: 6, t: 10, b: 10 },
+      paper_bgcolor: '#ffffff',
+      plot_bgcolor: '#ffffff',
+      shapes: legend.shapes,
+      annotations: legend.annotations,
+      geo: {
+        domain: {
+          x: [0, 1],
+          y: [0, Math.max(0.55, 1 - legend.reservedTopSpace)]
+        },
+        visible: false,
+        projection: { type: 'mercator' },
+        lataxis: { range: [-35.5, 6.5] },
+        lonaxis: { range: [-74.5, -32.0] },
+        bgcolor: '#ffffff',
+        showland: true,
+        landcolor: '#ffffff',
+        showocean: false,
+        showcountries: false,
+        showcoastlines: false
+      }
+    }, PLOT_CONFIG);
+
+    const matched = assignments.size;
+    const totalRows = filterState.indices.length;
+    const codeColumnEmpty = Boolean(codeCol) && totalRows > 0 && codeEmpty === totalRows;
+    const details = [];
+
+    if (!matched && codeColumnEmpty && !nameCol) {
+      // Caso comum: a coluna de código foi selecionada, mas está sem valores.
+      // Sem este aviso, o usuário via apenas "nomes não encontrados" e um mapa cinza.
+      details.push(`nenhum município associado: a coluna de código selecionada ("${codeCol}") está vazia em todas as ${totalRows.toLocaleString('pt-BR')} linhas — selecione a coluna com o nome do município ou preencha os códigos IBGE na planilha`);
+    } else {
+      details.push(`${matched.toLocaleString('pt-BR')} municípios associados`);
+    }
+    if (matchedByNameUf) details.push(`${matchedByNameUf.toLocaleString('pt-BR')} por nome e UF`);
+    if (matchedByName) details.push(`${matchedByName.toLocaleString('pt-BR')} por nome único`);
+    if (matchedByCode) details.push(`${matchedByCode.toLocaleString('pt-BR')} pelo código IBGE`);
+    if (ambiguous) details.push(`${ambiguous.toLocaleString('pt-BR')} nomes ambíguos entre UFs (selecione a coluna da UF ou preencha o código IBGE para diferenciá-los)`);
+    if (ufMismatch) details.push(`${ufMismatch.toLocaleString('pt-BR')} nomes cuja UF informada não confere com a malha`);
+    if (notFound) details.push(`${notFound.toLocaleString('pt-BR')} linhas sem correspondência por nome ou código`);
+    if (codeCol && codeEmpty && !(codeColumnEmpty && !nameCol && !matched)) {
+      details.push(`coluna de código "${codeCol}" vazia em ${codeEmpty.toLocaleString('pt-BR')} de ${totalRows.toLocaleString('pt-BR')} linhas`);
+    }
+    if (!matched && unmatchedSamples.length) {
+      details.push(`exemplos sem correspondência: ${unmatchedSamples.join(' · ')}`);
+    }
+    if (duplicateRows) details.push(`${duplicateRows.toLocaleString('pt-BR')} linhas municipais repetidas`);
+    if (conflictingRows) details.push(`${conflictingRows.toLocaleString('pt-BR')} repetições com clusters conflitantes`);
+    details.push(`${filterState.indices.length.toLocaleString('pt-BR')} linhas atendem aos filtros da tabela`);
+    details.push(`${state.activeClusters.size} de ${result.requestedK} clusters visíveis`);
+    details.push('municípios ausentes, removidos ou excluídos pelos filtros aparecem em cinza');
+    mapStats.textContent = details.join('; ') + '.';
+  }
+
+  function buildMapLegend(items) {
+    const shapes = [];
+    const annotations = [];
+
+    // Legenda horizontal no topo, com quebra automática de linha
+    // para não sumir quando houver muitos clusters.
+    const topY = 0.985;
+    const startX = 0.06;
+    const endX = 0.96;
+    const boxSize = 0.018;
+    const boxTextGap = 0.010;
+    const itemGap = 0.020;
+    const rowHeight = 0.046;
+
+    let currentX = startX;
+    let currentRow = 0;
+
+    function estimateItemWidth(label) {
+      // largura aproximada do quadrado + espaço + texto + folga
+      return boxSize + boxTextGap + Math.max(0.028, String(label ?? '').length * 0.010) + itemGap;
+    }
+
+    items.forEach(item => {
+      const width = estimateItemWidth(item.label);
+
+      if (currentX + width > endX && currentX > startX) {
+        currentRow += 1;
+        currentX = startX;
+      }
+
+      const centerY = topY - currentRow * rowHeight - 0.016;
+
+      shapes.push({
+        type: 'rect',
+        xref: 'paper',
+        yref: 'paper',
+        x0: currentX,
+        x1: currentX + boxSize,
+        y0: centerY - boxSize / 2,
+        y1: centerY + boxSize / 2,
+        fillcolor: item.color,
+        line: {
+          color: 'rgba(0,0,0,0)',
+          width: 0
+        },
+        layer: 'above'
+      });
+
+      annotations.push({
+        xref: 'paper',
+        yref: 'paper',
+        x: currentX + boxSize + boxTextGap,
+        y: centerY,
+        text: item.label,
+        showarrow: false,
+        xanchor: 'left',
+        yanchor: 'middle',
+        font: {
+          size: 12,
+          color: '#374151'
+        }
+      });
+
+      currentX += width;
+    });
+
+    const rowsUsed = currentRow + 1;
+    const reservedTopSpace = 0.035 + rowsUsed * rowHeight;
+
+    return { shapes, annotations, reservedTopSpace };
+  }
+
+  function renderNotes(result) {
+    const notes = [];
+
+    notes.push(
+      `Fluxo usado nesta execução: ${result.metadata.pipeline}. A normalização MinMax é aplicada apenas à matriz usada pelo K-means, pela curva do Joelho e pelo coeficiente Silhouette. Os centroides, a projeção fatorial, a tabela e a exportação permanecem na escala do tratamento selecionado.`
+    );
+
+    notes.push(
+      `Compatibilidade reproduzida: inicialização k-means++ greedy, uma execução por valor de k, semente ${parseInt(el('seed').value, 10) || 790}, máximo de ${FINAL_MAX_ITER} iterações e tolerância ${KMEANS_TOLERANCE}. O mesmo ajuste em k=${result.requestedK} alimenta o cartão, os gráficos, a tabela e o mapa.`
+    );
+
+    notes.push(
+      `Toda a curva Silhouette é exata e calculada sobre a base completa, com ${result.validRows.toLocaleString('pt-BR')} observações. Não há amostragem nem correção posterior da curva.`
+    );
+
+    notes.push(
+      `Os identificadores C0, C1, C2 e seguintes são ordenados pelo ranking médio dos centroides normalizados, do maior escore para o menor, reproduzindo a numeração dos arquivos exportados pelo Visual Clustering.`
+    );
+
+    if (result.emptyClusters) {
+      notes.push(
+        `Atenção: ${result.emptyClusters} cluster(s) terminaram vazios. Reduza o número de clusters ou revise as variáveis selecionadas.`
+      );
+    }
+
+    if (result.diagnostics.undefinedSilhouettes) {
+      notes.push(
+        `Em ${result.diagnostics.undefinedSilhouettes} valor(es) de k o Silhouette não pôde ser definido. Esses pontos não são plotados.`
+      );
+    }
+
+    if (
+      state.identifierColumns
+      && state.identifierColumns.length
+      && result.features.some(isIdentifierLike)
+    ) {
+      notes.push(
+        `Atenção: há coluna(s) de código ou identificação entre as variáveis usadas (${result.features.filter(isIdentifierLike).join(', ')}). O MinMax reduz a diferença de escala, mas não transforma códigos em indicadores substantivos.`
+      );
+    }
+
+    if (
+      result.validRows
+      && result.removedRows / Math.max(1, result.sourceRows) > 0.2
+    ) {
+      notes.push(
+        `Atenção: o tratamento descartou ${formatPercent(result.removedRows / result.sourceRows)} das linhas. O filtro por intervalo interquartil é aplicado a cada variável, e a linha é removida quando qualquer valor fica fora dos limites.`
+      );
+    }
+
+    notes.push(
+      `A projeção fatorial corresponde aos dois primeiros componentes principais calculados na escala do tratamento selecionado. A orientação de cada fator é definida automaticamente pela variável de maior carga absoluta: valores altos da variável dominante ficam à direita no Fator 1 ou na parte superior no Fator 2. Essa convenção altera apenas o sinal visual do componente, sem mudar distâncias, clusters ou variância explicada.`
+    );
+
+    notes.push(
+      `A tabela ao lado do mapa permite filtrar Município, UF e todas as variáveis selecionadas. Os filtros são aplicados simultaneamente à projeção fatorial, ao perfil médio e ao mapa.`
+    );
+
+    notes.push(
+      `O painel de exibição permite ocultar ou mostrar simultaneamente os clusters na projeção fatorial, no perfil dos centroides e no mapa.`
+    );
+
+    if (state.activeTreatment === 'no_outliers') {
+      notes.push(
+        `Foram removidas ${result.removedRows.toLocaleString('pt-BR')} linhas por apresentarem ao menos um valor fora dos limites de 1,5 vezes o intervalo interquartil.`
+      );
+    }
+
+    if (result.missingRows > 0) {
+      notes.push(
+        `${result.missingRows.toLocaleString('pt-BR')} linhas com valor ausente ou não numérico em pelo menos uma variável selecionada não foram clusterizadas.`
+      );
+    }
+
+    el('notes').innerHTML = notes
+      .map(note => `<div>${escapeHtml(note)}</div>`)
+      .join('');
+  }
+
+  function exportResults() {
+    if (!Object.keys(state.results).length) return;
+    try {
+      const wb = XLSX.utils.book_new();
+      const summaryRows = [[
+        'Tratamento', 'Linhas', 'Removidas', 'Clusters pedidos', 'Clusters não vazios',
+        'SSE', 'Silhouette no k selecionado', 'Escala dos centroides'
+      ]];
+
+      TREATMENTS.forEach(treatment => {
+        const result = state.results[treatment.key];
+        if (!result || result.skipped) return;
+        const short = sheetSafeName(treatment.short);
+        const counts = result.clusterSizes;
+        const escala = treatment.key === 'raw' ? 'original' : treatment.short;
+        // Os valores de cada tratamento estão em escalas diferentes. O sufixo evita
+        // que a planilha exportada seja lida como se fossem os valores originais.
+        const featureLabels = result.features.map(feature => treatment.key === 'raw' ? feature : `${feature} [${escala}]`);
+
+        const centroidRows = [['Cluster', 'Quantidade', 'Participação', ...featureLabels]];
+        const totalRows = counts.reduce((sum, value) => sum + value, 0) || 1;
+        result.centroids.forEach((centroid, c) => centroidRows.push([
+          `C${c}${counts[c] === 0 ? ' (vazio)' : ''}`, counts[c], counts[c] / totalRows, ...centroid
+        ]));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(centroidRows), sheetSafeName(`Cent_${short}`));
+
+        // Uma coluna escolhida como identificador pode também ter sido usada como
+        // variável. Sem esta exclusão o cabeçalho saía com o mesmo nome duas vezes,
+        // uma com o valor original e outra com o valor tratado.
+        const featureSet = new Set(result.features);
+        const identifierColumns = [
+          rowIdentifierColumn.value,
+          labelColumn.value,
+          ufColumn.value,
+          codeColumn.value
+        ].filter((column, index, list) => column && list.indexOf(column) === index && !featureSet.has(column));
+
+        const dataHeaders = ['Linha original', 'Cluster', ...identifierColumns, ...featureLabels];
+        // No tratamento bruto os valores já são os originais; nos demais, o valor
+        // original é exportado ao lado do valor tratado.
+        if (treatment.key !== 'raw') dataHeaders.push(...result.features.map(feature => `${feature} [original]`));
+
+        const dataRows = [dataHeaders];
+        result.matrix.forEach((values, i) => {
+          const sourceIndex = result.rowIndices[i];
+          const sourceRow = state.rows[sourceIndex];
+          const row = [sourceIndex + 2, `C${result.labels[i]}`];
+          identifierColumns.forEach(column => row.push(sourceRow[column]));
+          row.push(...values);
+          if (treatment.key !== 'raw') result.features.forEach(feature => row.push(toNumber(sourceRow[feature])));
+          dataRows.push(row);
+        });
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataRows), sheetSafeName(`Dados_${short}`));
+
+        const diagRows = [['k', 'SSE', 'Silhouette', 'Tamanho da amostra do silhouette']];
+        result.diagnostics.kValues.forEach((k, i) => diagRows.push([
+          k,
+          result.diagnostics.sseValues[i],
+          Number.isFinite(result.diagnostics.silhouetteValues[i]) ? result.diagnostics.silhouetteValues[i] : null,
+          result.diagnostics.silhouetteSampleSizes ? result.diagnostics.silhouetteSampleSizes[i] : null
+        ]));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(diagRows), sheetSafeName(`Diag_${short}`));
+
+        const silhouette = silhouetteAtRequestedK(result);
+        summaryRows.push([
+          treatment.name,
+          result.validRows,
+          result.removedRows,
+          result.requestedK,
+          counts.filter(size => size > 0).length,
+          result.sse,
+          Number.isFinite(silhouette) ? silhouette : null,
+          escala
+        ]);
+      });
+
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows), 'Resumo');
+      XLSX.writeFile(wb, `${state.inputFileName || 'clusterizacao'}_resultados_kmeans.xlsx`);
+    } catch (error) {
+      console.error(error);
+      showStatus(`Não foi possível exportar os resultados: ${error.message}`, 0, 'error');
+    }
+  }
+
+  function toNumber(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+    if (value instanceof Date) return NaN;
+    if (value === null || value === undefined) return NaN;
+    let s = String(value).trim().replace(/\s+/g, '');
+    if (!s) return NaN;
+
+    // Valores exportados com símbolo monetário ou sinal de percentual eram
+    // descartados como "linha incompleta". Agora o símbolo é removido e o número
+    // aproveitado; o percentual é lido na própria unidade em que foi digitado.
+    s = s.replace(/^(r\$|rs|us\$|\$|€|£)/i, '').replace(/%$/, '').trim();
+    if (!s) return NaN;
+
+    if (/^-?\d{1,3}(\.\d{3})+,\d+$/.test(s)) {
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else if (/^-?\d{1,3}(,\d{3})+\.\d+$/.test(s)) {
+      s = s.replace(/,/g, '');
+    } else if (/^-?\d+,\d+$/.test(s)) {
+      s = s.replace(',', '.');
+    }
+    const number = Number(s);
+    return Number.isFinite(number) ? number : NaN;
+  }
+
+  function quantileSorted(sorted, q) {
+    if (!sorted.length) return NaN;
+    if (sorted.length === 1) return sorted[0];
+    const position = (sorted.length - 1) * q;
+    const base = Math.floor(position);
+    const rest = position - base;
+    return sorted[base + 1] !== undefined ? sorted[base] + rest * (sorted[base + 1] - sorted[base]) : sorted[base];
+  }
+
+  function mean(values) {
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  }
+
+  function standardDeviation(values, knownMean = mean(values)) {
+    if (values.length <= 1) return 0;
+    const variance = values.reduce(
+      (sum, value) => sum + (value - knownMean) ** 2,
+      0
+    ) / values.length;
+    return Math.sqrt(variance);
+  }
+
+  function squaredDistance(a, b) {
+    let sum = 0;
+    for (let i = 0; i < a.length; i++) {
+      const d = a[i] - b[i];
+      sum += d * d;
+    }
+    return sum;
+  }
+
+  function deterministicSampleIndices(n, size, seed) {
+    if (size >= n) return Array.from({ length: n }, (_, i) => i);
+    const rng = mulberry32(seed);
+    const indices = Array.from({ length: n }, (_, i) => i);
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    return indices.slice(0, size).sort((a, b) => a - b);
+  }
+
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function() {
+      a |= 0;
+      a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function identityMatrix(n) {
+    return Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => i === j ? 1 : 0));
+  }
+
+
+  function firstDefined(...values) {
+    return values.find(value => value !== undefined && value !== null && value !== '');
+  }
+
+  function normalizeMunicipalityName(value) {
+    return normalizeText(value)
+      .replace(/\bmunicipio de\b/g, ' ')
+      .replace(/\bcidade de\b/g, ' ')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function normalizeUF(value) {
+    // Muitas bases derivadas do IBGE trazem a UF como código numérico (33 = RJ).
+    // Antes esses valores eram descartados e a desambiguação por UF se perdia.
+    const raw = String(value ?? '').trim();
+    if (/^\d{1,2}$/.test(raw)) return UF_CODE_TO_SIGLA[String(Number(raw))] || '';
+
+    const normalized = normalizeText(value).replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!normalized) return '';
+    if (normalized.length === 2) return normalized.toUpperCase();
+    return UF_NAME_TO_CODE[normalized] || '';
+  }
+
+  function normalizeText(value) {
+    return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[_-]+/g, ' ').trim();
+  }
+
+  function normalizeCode(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'number' && Number.isFinite(value)) return String(Math.trunc(value));
+    // Remove um eventual decimal residual ("3303302.0") e depois tudo que não
+    // for dígito, aceitando códigos com pontos, espaços ou texto ao redor.
+    return String(value).trim().replace(/[.,]0+$/, '').replace(/\D+/g, '');
+  }
+
+
+  function discreteColorscaleWithMissing(k) {
+    const colors = [MAP_NO_DATA_COLOR, ...Array.from({ length: k }, (_, i) => COLORS[i % COLORS.length])];
+    const scale = [];
+    const count = colors.length;
+    colors.forEach((color, i) => {
+      const start = i / count;
+      const end = (i + 1) / count;
+      scale.push([start, color], [end, color]);
+    });
+    return scale;
+  }
+
+  function discreteColorscale(k) {
+    if (k <= 1) return [[0, COLORS[0]], [1, COLORS[0]]];
+    const scale = [];
+    for (let i = 0; i < k; i++) {
+      const start = i / k;
+      const end = (i + 1) / k;
+      const color = COLORS[i % COLORS.length];
+      scale.push([start, color], [end, color]);
+    }
+    return scale;
+  }
+
+  function formatNumber(value, digits = 4) {
+    if (!Number.isFinite(value)) return '';
+    const abs = Math.abs(value);
+    // O limite anterior de 1e8 transformava população e PIB de municípios grandes
+    // em notação científica de cinco dígitos significativos dentro da tabela.
+    if ((abs !== 0 && abs < 0.0001) || abs >= 1e15) return value.toExponential(6).replace('.', ',');
+    return value.toLocaleString('pt-BR', { maximumFractionDigits: digits });
+  }
+
+  function formatPercent(value) {
+    return (value * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function sheetSafeName(name) {
+    return String(name).replace(/[\\/?*\[\]:]/g, '_').slice(0, 31) || 'Planilha';
+  }
+})();
+</script>
+</body>
+</html>
