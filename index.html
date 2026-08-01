@@ -644,6 +644,24 @@
       background: #fff;
     }
 
+
+    /* A UF contém somente duas letras; mantém a segunda coluna compacta. */
+    .linked-data-table th.uf-column,
+    .linked-data-table td.uf-column {
+      width: 58px;
+      min-width: 58px;
+      max-width: 58px;
+      text-align: center;
+    }
+
+    .linked-data-table th.uf-column .column-filter {
+      width: 48px;
+      min-width: 0;
+      padding-left: 5px;
+      padding-right: 5px;
+      text-align: center;
+    }
+
     .linked-data-table tbody tr {
       border-left: 4px solid transparent;
     }
@@ -3084,7 +3102,8 @@
     let html = '<table class="linked-data-table"><thead>';
     html += '<tr class="column-row">';
     model.columns.forEach(column => {
-      html += `<th>${escapeHtml(column.label)}</th>`;
+      const columnClass = column.key === '__uf' ? ' class="uf-column"' : '';
+      html += `<th${columnClass}>${escapeHtml(column.label)}</th>`;
     });
     html += '</tr><tr class="filter-row">';
 
@@ -3092,7 +3111,8 @@
       const placeholder = column.type === 'number'
         ? 'Ex.: >100 ou 10..20'
         : 'Filtrar';
-      html += `<th><input class="column-filter" data-filter-key="${escapeHtml(column.key)}" type="text" value="${escapeHtml(filters[column.key] || '')}" placeholder="${escapeHtml(placeholder)}"></th>`;
+      const columnClass = column.key === '__uf' ? ' class="uf-column"' : '';
+      html += `<th${columnClass}><input class="column-filter" data-filter-key="${escapeHtml(column.key)}" type="text" value="${escapeHtml(filters[column.key] || '')}" placeholder="${escapeHtml(placeholder)}"></th>`;
     });
 
     html += '</tr></thead><tbody id="linkedTableBody"></tbody></table>';
@@ -3146,7 +3166,8 @@
           const display = column.type === 'number'
             ? formatNumber(value, 6)
             : String(value ?? '');
-          return `<td>${escapeHtml(display)}</td>`;
+          const columnClass = column.key === '__uf' ? ' class="uf-column"' : '';
+          return `<td${columnClass}>${escapeHtml(display)}</td>`;
         }).join('');
 
         return `<tr title="Cluster C${record.cluster}" style="border-left-color:${color}">${cells}</tr>`;
