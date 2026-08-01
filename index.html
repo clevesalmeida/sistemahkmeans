@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sistema de Clusterização K-means</title>
+  <title>Sistema de Clusterização HK-means</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <style>
@@ -804,8 +804,8 @@
 <body>
   <header>
     <div class="wrap">
-      <h1>Sistema de Clusterização K-means</h1>
-      <p>Importe uma planilha Excel, escolha as variáveis e o número de clusters. O sistema aplica MinMax internamente e reproduz os parâmetros, o ranking e as curvas exatas observados nos resultados do Visual Clustering usados na dissertação.</p>
+      <h1>Sistema de Clusterização HK-means</h1>
+      <p>Realize a clusterização com o método k-means e analise os grupos de forma simples e intuitiva.</p>
     </div>
   </header>
 
@@ -844,10 +844,10 @@
 
           <div>
             <label class="checkbox-field" for="exactSilhouetteCurve">
-              <input id="exactSilhouetteCurve" type="checkbox" checked disabled>
+              <input id="exactSilhouetteCurve" type="checkbox" checked>
               Curva silhouette exata
             </label>
-            <div class="help">Sempre ativa no modo compatível.<br>Calculada na base completa para todos os valores de k.</div>
+            <div class="help">Marcada: usa a base completa em todos os valores de k.<br>Desmarcada: usa amostra estratificada para acelerar o processamento.</div>
           </div>
         </div>
 
@@ -875,19 +875,19 @@
             <div class="map-config-field">
               <label for="ufColumn">Coluna da UF</label>
               <select id="ufColumn" disabled></select>
-              <div class="help">Recomendada para diferenciar municípios homônimos.</div>
+              <div class="help">Recomendada para diferenciar municípios homônimos. Quando estiver vazia, o sistema tenta obter a UF pelos dois primeiros dígitos do código IBGE.</div>
             </div>
 
             <div class="map-config-field">
               <label for="codeColumn">Código IBGE opcional</label>
               <select id="codeColumn" disabled></select>
-              <div class="help">Usado como alternativa quando o nome não puder ser associado.</div>
+              <div class="help">Usado para associação direta. Se estiver vazio, o sistema procura outra coluna de código e depois tenta o nome do município.</div>
             </div>
 
             <div class="map-config-field">
               <label for="rowIdentifierColumn">Variável de texto que identifica as linhas</label>
               <select id="rowIdentifierColumn" disabled></select>
-              <div class="help">Usada para identificar cada observação ao passar o mouse nos gráficos.</div>
+              <div class="help">Usada para identificar cada observação ao passar o mouse nos gráficos. Códigos numéricos do Excel são convertidos automaticamente para texto.</div>
             </div>
 
             <div class="map-config-field">
@@ -1024,9 +1024,12 @@
   const DIAG_MAX_ITER = 300;
   const KMEANS_TOLERANCE = 1e-4;
   const APPLY_FINAL_MINMAX_BEFORE_KMEANS = true;
+  const SILHOUETTE_SAMPLE_SIZE = 1500;
 
   const COLORS = ['#007a4d', '#f6df91', '#b50935', '#e76f51', '#2a9d8f', '#264653', '#457b9d', '#8d5a97', '#6a994e', '#bc6c25', '#577590', '#f94144'];
-  const MAP_NO_DATA_COLOR = '#c9c9c9';
+  const MAP_NO_DATA_COLOR = '#bfc5ca';
+  const MAP_OUTSIDE_TREATMENT_COLOR = '#dfe3e6';
+  const MAP_FILTERED_COLOR = '#f0f2f4';
   const PLOT_CONFIG = { responsive: true, displaylogo: false, toImageButtonOptions: { format: 'png', scale: 2 } };
   const IBGE_MUNICIPAL_MESH_URL = 'https://servicodados.ibge.gov.br/api/v4/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application%2Fvnd.geo%2Bjson';
   const IBGE_MUNICIPALITIES_URL = 'https://servicodados.ibge.gov.br/api/v1/localidades/municipios';
@@ -1063,6 +1066,7 @@
     municipalityByNameUf: new Map(),
     municipalityByCode: new Map(),
     municipalityByCode6: new Map(),
+    municipalityByCodeRoot: new Map(),
     inputFileName: '',
     activeClusters: new Set(),
     municipalityFeatureById: new Map(),
@@ -1512,13 +1516,37 @@
     state.municipalityByNameUf = new Map();
     state.municipalityByCode = new Map();
     state.municipalityByCode6 = new Map();
+    state.municipalityByCodeRoot = new Map();
     state.municipalityFeatureById = new Map();
 
     state.geojson.features.forEach((feature, index) => {
       const properties = feature.properties || (feature.properties = {});
-      const name = firstDefined(properties.nome, properties.NM_MUN, properties.name, properties.NOME, '');
-      const uf = normalizeUF(firstDefined(properties.uf, properties.SIGLA_UF, properties.UF, properties.sigla, ''));
-      const code = normalizeCode(firstDefined(properties.cd_geocmu, properties.CD_MUN, properties.CD_GEOCMU, properties.codarea, feature.id, ''));
+      const name = firstDefined(
+        properties.nome,
+        properties.NM_MUN,
+        properties.name,
+        properties.NOME,
+        ''
+      );
+      const code = normalizeCode(
+        firstDefined(
+          properties.cd_geocmu,
+          properties.CD_MUN,
+          properties.CD_GEOCMU,
+          properties.codarea,
+          feature.id,
+          ''
+        )
+      );
+      const uf = normalizeUF(
+        firstDefined(
+          properties.uf,
+          properties.SIGLA_UF,
+          properties.UF,
+          properties.sigla,
+          ''
+        )
+      ) || ufFromIbgeCode(code);
       const normalizedName = normalizeMunicipalityName(name);
       const id = code || `${normalizedName}|${uf}|${index}`;
 
@@ -1530,9 +1558,21 @@
 
       if (code) {
         state.municipalityByCode.set(code, id);
-        // Índice adicional pelos 6 primeiros dígitos: muitas bases derivadas do
-        // IBGE trazem o código municipal sem o dígito verificador final.
-        if (code.length === 7 && !state.municipalityByCode6.has(code.slice(0, 6))) {
+
+        // Os seis primeiros dígitos identificam o município; o sétimo é
+        // dígito verificador. O índice abaixo permite conciliar malhas e
+        // planilhas que usam comprimentos diferentes.
+        if (code.length >= 6) {
+          const rootCode = code.slice(0, 6);
+          if (!state.municipalityByCodeRoot.has(rootCode)) {
+            state.municipalityByCodeRoot.set(rootCode, id);
+          }
+        }
+
+        if (
+          code.length === 7
+          && !state.municipalityByCode6.has(code.slice(0, 6))
+        ) {
           state.municipalityByCode6.set(code.slice(0, 6), id);
         }
       }
@@ -1547,196 +1587,121 @@
   function resolveMunicipalityCode(value) {
     const digits = normalizeCode(value);
     if (!digits || digits.length < 6) return '';
-    if (state.municipalityByCode.has(digits)) return state.municipalityByCode.get(digits);
-    // Código de distrito ou subdistrito (9 ou 11 dígitos): os 7 primeiros
-    // dígitos identificam o município.
-    if (digits.length > 7 && state.municipalityByCode.has(digits.slice(0, 7))) {
-      return state.municipalityByCode.get(digits.slice(0, 7));
+
+    // 1. Correspondência exata.
+    if (state.municipalityByCode.has(digits)) {
+      return state.municipalityByCode.get(digits);
     }
-    // Código com 6 dígitos, sem o dígito verificador.
-    if (digits.length === 6 && state.municipalityByCode6.has(digits)) {
+
+    // 2. Código de distrito ou subdistrito: os sete primeiros dígitos
+    // representam o município.
+    if (digits.length > 7) {
+      const municipalCode = digits.slice(0, 7);
+      if (state.municipalityByCode.has(municipalCode)) {
+        return state.municipalityByCode.get(municipalCode);
+      }
+    }
+
+    // 3. Correspondência pelos seis primeiros dígitos, independentemente
+    // de a planilha ou a malha possuir o dígito verificador.
+    const rootCode = digits.slice(0, 6);
+    if (state.municipalityByCodeRoot.has(rootCode)) {
+      return state.municipalityByCodeRoot.get(rootCode);
+    }
+
+    if (
+      digits.length === 6
+      && state.municipalityByCode6.has(digits)
+    ) {
       return state.municipalityByCode6.get(digits);
     }
+
     return '';
   }
 
   function matchMunicipality(row, nameCol, ufCol, codeCol) {
-    const normalizedName = nameCol ? normalizeMunicipalityName(row[nameCol]) : '';
-    const uf = ufCol ? normalizeUF(row[ufCol]) : '';
-    const codeId = codeCol ? resolveMunicipalityCode(row[codeCol]) : '';
+    const effectiveNameCol =
+      getEffectiveMunicipalityNameColumn(nameCol);
+    const normalizedName = effectiveNameCol
+      ? normalizeMunicipalityName(
+          getImportedRowValue(row, effectiveNameCol)
+        )
+      : '';
+    const uf = ufCol
+      ? normalizeUF(getImportedRowValue(row, ufCol))
+      : '';
+
+    const codeResult =
+      getUsableMunicipalityCode(row, codeCol);
+    const codeId = codeResult.digits
+      ? resolveMunicipalityCode(codeResult.value)
+      : '';
+
+    // O código IBGE é único e recebe prioridade quando pode ser
+    // associado à malha.
+    if (codeId) {
+      return {
+        id: codeId,
+        method: codeResult.fallback
+          ? 'code_fallback'
+          : 'code',
+        nameColumn: effectiveNameCol,
+        codeColumn: codeResult.column
+      };
+    }
 
     if (normalizedName && uf) {
-      const id = state.municipalityByNameUf.get(`${normalizedName}|${uf}`);
-      if (id) return { id, method: 'name_uf' };
+      const id = state.municipalityByNameUf.get(
+        `${normalizedName}|${uf}`
+      );
+      if (id) {
+        return {
+          id,
+          method: nameCol ? 'name_uf' : 'name_uf_auto',
+          nameColumn: effectiveNameCol,
+          codeColumn: codeResult.column
+        };
+      }
     }
-
-    // O código IBGE é único e tem prioridade sobre o nome quando a UF informada
-    // não confere, evitando pintar um município de outro estado no mapa.
-    if (codeId) return { id: codeId, method: 'code' };
 
     if (normalizedName) {
-      const candidates = state.municipalityByName.get(normalizedName) || [];
+      const candidates =
+        state.municipalityByName.get(normalizedName) || [];
+
       if (candidates.length === 1) {
-        // Antes, um nome único era aceito mesmo contradizendo a UF informada.
-        if (uf) return { id: null, method: 'uf_mismatch' };
-        return { id: candidates[0], method: 'name' };
-      }
-      if (candidates.length > 1) return { id: null, method: 'ambiguous' };
-    }
-
-    return { id: null, method: 'not_found' };
-  }
-
-  async function runAnalysis() {
-    try {
-      if (!state.rows.length) throw new Error('Carregue uma planilha Excel.');
-      if (typeof Plotly === 'undefined') throw new Error('A biblioteca de gráficos não foi carregada. Verifique a conexão com a internet.');
-
-      const selectedFeatures = Array.from(variablesBox.querySelectorAll('input[type="checkbox"]:checked')).map(input => input.dataset.column);
-      if (selectedFeatures.length < 2) throw new Error('Selecione pelo menos duas variáveis numéricas.');
-
-      const requestedK = parseInt(el('clusterCount').value, 10);
-      let maxK = parseInt(el('maxK').value, 10);
-      const parsedSeed = parseInt(el('seed').value, 10);
-      const seed = Number.isInteger(parsedSeed) ? parsedSeed : 790;
-
-      if (!Number.isInteger(requestedK) || requestedK < 2) {
-        throw new Error('Informe um número de clusters igual ou superior a 2.');
-      }
-
-      maxK = Math.max(requestedK, Math.min(20, Number.isInteger(maxK) ? maxK : 15));
-
-      state.selectedFeatures = selectedFeatures;
-      state.results = {};
-      state.tableFiltersByTreatment = {};
-      state.tablePageByTreatment = {};
-      runButton.disabled = true;
-      exportButton.disabled = true;
-      el('results').style.display = 'none';
-      showStatus('Preparando os dados...', 2);
-      await yieldUI();
-
-      const prepared = prepareBaseData(state.rows, selectedFeatures);
-      if (prepared.matrix.length <= requestedK) {
-        throw new Error(`Há apenas ${prepared.matrix.length} linhas completas. O número de clusters deve ser menor que a quantidade de linhas válidas.`);
-      }
-
-      const treatments = createTreatments(prepared.matrix, prepared.rowIndices, selectedFeatures);
-      const totalSteps = TREATMENTS.length;
-
-      for (let t = 0; t < TREATMENTS.length; t++) {
-        const descriptor = TREATMENTS[t];
-        const data = treatments[descriptor.key];
-        const basePercent = 5 + (t / totalSteps) * 90;
-
-        showStatus(`Processando ${descriptor.name}: normalização MinMax e K-means compatível...`, basePercent);
-        await yieldUI();
-
-        if (!data || data.matrix.length <= requestedK) {
-          state.results[descriptor.key] = {
-            descriptor,
-            skipped: true,
-            reason: `Quantidade insuficiente de linhas após o tratamento: ${data ? data.matrix.length : 0}.`
+        if (uf) {
+          return {
+            id: null,
+            method: 'uf_mismatch',
+            nameColumn: effectiveNameCol,
+            codeColumn: codeResult.column
           };
-          continue;
         }
 
-        // displayMatrix preserva a escala que entrou no Visual Clustering.
-        // modelMatrix recebe a normalização MinMax interna usada nas distâncias.
-        const displayMatrix = data.matrix.map(row => row.slice());
-        const finalScaling = APPLY_FINAL_MINMAX_BEFORE_KMEANS
-          ? applyFinalMinMax(displayMatrix)
-          : { matrix: displayMatrix.map(row => row.slice()), mins: [], maxs: [] };
-        const modelMatrix = finalScaling.matrix;
-        const diagnosticMaxK = Math.min(maxK, modelMatrix.length - 1);
-
-        // O Visual Clustering usado nos arquivos fornecidos equivale a:
-        // KMeans(k, init='k-means++', n_init=1, random_state=790,
-        //        max_iter=300, tol=1e-4, algorithm='lloyd').
-        const rawFinalFit = kmeans(modelMatrix, requestedK, {
-          seed,
-          maxIter: FINAL_MAX_ITER,
-          tolerance: KMEANS_TOLERANCE
-        });
-
-        // O site renumera os clusters pelo ranking médio dos centroides
-        // normalizados, do maior escore para o menor.
-        const finalFit = canonicalizeKMeans(rawFinalFit);
-
-        const diagnostics = await computeDiagnostics(
-          modelMatrix,
-          diagnosticMaxK,
-          seed,
-          { k: requestedK, fit: finalFit },
-          (k, max, message) => {
-            const local = k / max;
-            showStatus(
-              `Processando ${descriptor.name}: ${message || `diagnóstico k=${k} de ${max}`}...`,
-              basePercent + local * (90 / totalSteps) * 0.72
-            );
-          }
-        );
-
-        // O Visual Clustering exporta e apresenta os centroides na escala
-        // original do arquivo importado, apesar de clusterizar em MinMax.
-        const displayCentroids = computeCentroidsForLabels(
-          displayMatrix,
-          finalFit.labels,
-          requestedK
-        );
-
-        const pca = computePCA(displayMatrix, displayCentroids);
-        const clusterSizes = Array(requestedK).fill(0);
-        finalFit.labels.forEach(label => clusterSizes[label]++);
-
-        state.results[descriptor.key] = {
-          descriptor,
-          skipped: false,
-          matrix: displayMatrix,
-          modelMatrix,
-          rowIndices: data.rowIndices,
-          metadata: {
-            ...data.metadata,
-            finalMinMaxApplied: APPLY_FINAL_MINMAX_BEFORE_KMEANS,
-            finalMinMaxMins: finalScaling.mins,
-            finalMinMaxMaxs: finalScaling.maxs,
-            pipeline: `${descriptor.name} → MinMax interno → K-means compatível`
-          },
-          labels: finalFit.labels,
-          centroids: displayCentroids,
-          modelCentroids: finalFit.centroids,
-          rankingScores: finalFit.rankingScores,
-          sse: finalFit.sse,
-          clusterSizes,
-          emptyClusters: clusterSizes.filter(size => size === 0).length,
-          diagnostics,
-          pca,
-          requestedK,
-          sourceRows: prepared.matrix.length,
-          validRows: modelMatrix.length,
-          removedRows: prepared.matrix.length - data.matrix.length,
-          missingRows: prepared.missingRows,
-          features: selectedFeatures
+        return {
+          id: candidates[0],
+          method: nameCol ? 'name' : 'name_auto',
+          nameColumn: effectiveNameCol,
+          codeColumn: codeResult.column
         };
-
-        await yieldUI();
       }
 
-      state.activeTreatment = TREATMENTS.find(t => state.results[t.key] && !state.results[t.key].skipped)?.key || 'raw';
-      state.activeClusters = new Set(Array.from({ length: requestedK }, (_, cluster) => cluster));
-      buildTabs();
-      buildClusterVisibilityControls(requestedK);
-      renderActiveTreatment();
-      el('results').style.display = 'block';
-      exportButton.disabled = false;
-      showStatus('Clusterização concluída com os parâmetros compatíveis com o Visual Clustering.', 100, 'success');
-      el('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } catch (error) {
-      console.error(error);
-      showStatus(error.message || 'Ocorreu um erro durante a clusterização.', 0, 'error');
-    } finally {
-      runButton.disabled = false;
+      if (candidates.length > 1) {
+        return {
+          id: null,
+          method: 'ambiguous',
+          nameColumn: effectiveNameCol,
+          codeColumn: codeResult.column
+        };
+      }
     }
+
+    return {
+      id: null,
+      method: 'not_found',
+      nameColumn: effectiveNameCol,
+      codeColumn: codeResult.column
+    };
   }
 
   function prepareBaseData(rows, features) {
@@ -1866,43 +1831,78 @@
       await yieldUI();
     }
 
-    const partitions = [];
-    for (let k = 2; k <= maxK; k++) {
-      partitions.push({ labels: fits[k - 1].labels, k });
-    }
+    const useExactCurve = Boolean(reuse && reuse.exactCurve);
 
-    const exactValues = partitions.length
-      ? await silhouetteExactMulti(matrix, partitions, (done, total) => {
-          if (onProgress) {
-            onProgress(
-              maxK,
-              maxK,
-              `Silhouette exato na base completa: ${Math.round(100 * done / total)}%`
-            );
-          }
-        })
-      : [];
-
-    for (let k = 1; k <= maxK; k++) {
-      if (k === 1) {
-        silhouetteValues.push(null);
-        silhouetteSampleSizes.push(0);
-        continue;
+    if (useExactCurve) {
+      const partitions = [];
+      for (let k = 2; k <= maxK; k++) {
+        partitions.push({ labels: fits[k - 1].labels, k });
       }
 
-      const value = exactValues[k - 2];
-      silhouetteValues.push(value);
-      silhouetteSampleSizes.push(matrix.length);
-      if (value === null) undefinedSilhouettes++;
+      const exactValues = partitions.length
+        ? await silhouetteExactMulti(matrix, partitions, (done, total) => {
+            if (onProgress) {
+              onProgress(
+                maxK,
+                maxK,
+                `Silhouette exato na base completa: ${Math.round(100 * done / total)}%`
+              );
+            }
+          })
+        : [];
+
+      for (let k = 1; k <= maxK; k++) {
+        if (k === 1) {
+          silhouetteValues.push(null);
+          silhouetteSampleSizes.push(0);
+          continue;
+        }
+
+        const value = exactValues[k - 2];
+        silhouetteValues.push(value);
+        silhouetteSampleSizes.push(matrix.length);
+        if (value === null) undefinedSilhouettes++;
+      }
+    } else {
+      for (let k = 1; k <= maxK; k++) {
+        if (k === 1) {
+          silhouetteValues.push(null);
+          silhouetteSampleSizes.push(0);
+          continue;
+        }
+
+        const fit = fits[k - 1];
+        const sampled = silhouetteSampled(
+          matrix,
+          fit.labels,
+          k,
+          SILHOUETTE_SAMPLE_SIZE,
+          seed + 555
+        );
+
+        silhouetteValues.push(sampled.value);
+        silhouetteSampleSizes.push(sampled.sampleSize);
+        if (sampled.value === null) undefinedSilhouettes++;
+
+        if (onProgress) {
+          onProgress(
+            k,
+            maxK,
+            `Silhouette por amostra: k=${k} de ${maxK}`
+          );
+        }
+
+        await yieldUI();
+      }
     }
 
     return {
       kValues,
       sseValues,
       silhouetteValues,
-      silhouetteSampleSize: matrix.length,
+      silhouetteSampleSize: Math.max(0, ...silhouetteSampleSizes),
       silhouetteSampleSizes,
-      silhouetteMode: 'exact_curve',
+      silhouetteMode: useExactCurve ? 'exact_curve' : 'sampled',
       monotonicityRepairs: 0,
       undefinedSilhouettes
     };
@@ -2781,8 +2781,19 @@
       const match = state.geojson && (nameCol || codeCol)
         ? matchMunicipality(sourceRow, nameCol, ufCol, codeCol)
         : { id: null, method: 'unavailable' };
-      const feature = match.id ? state.municipalityFeatureById.get(String(match.id)) : null;
+      const feature = match.id
+        ? state.municipalityFeatureById.get(String(match.id))
+        : null;
       const properties = feature?.properties || {};
+      const usableCode = getUsableMunicipalityCode(
+        sourceRow,
+        codeCol
+      );
+      const ufByCode = ufFromIbgeCode(
+        properties.__app_code
+        || usableCode.value
+        || match.id
+      );
 
       return {
         resultIndex,
@@ -2790,11 +2801,25 @@
         cluster: result.labels[resultIndex],
         mapId: match.id ? String(match.id) : '',
         municipality: properties.__app_name
-          || (nameCol ? String(sourceRow[nameCol] ?? '') : ''),
+          || (
+            nameCol
+              ? String(
+                  getImportedRowValue(sourceRow, nameCol)
+                  ?? ''
+                )
+              : ''
+          ),
         uf: properties.__app_uf
-          || (ufCol ? String(sourceRow[ufCol] ?? '') : ''),
+          || ufByCode
+          || (
+            ufCol
+              ? normalizeUF(
+                  getImportedRowValue(sourceRow, ufCol)
+                )
+              : ''
+          ),
         identifier: identifierCol
-          ? String(sourceRow[identifierCol] ?? '')
+          ? getRowIdentifierValue(sourceRow, identifierCol, 'Não informado')
           : `Linha ${sourceIndex + 2}`,
         values: result.matrix[resultIndex]
       };
@@ -3386,9 +3411,11 @@
         customdata: indices.map(i => {
           const originalRow = state.rows[result.rowIndices[i]];
           const identifierValue = rowIdCol
-            ? String(originalRow[rowIdCol] ?? '')
+            ? getRowIdentifierValue(originalRow, rowIdCol, 'Não informado')
             : `Linha ${result.rowIndices[i] + 2}`;
-          const ufValue = ufCol ? String(originalRow[ufCol] ?? '') : '';
+          const ufValue = ufCol
+            ? String(getImportedRowValue(originalRow, ufCol) ?? '')
+            : '';
           return [identifierLabel, identifierValue, ufValue, result.rowIndices[i] + 2];
         }),
         marker: {
@@ -3618,7 +3645,11 @@
           lon.push(lonValue);
           allLat.push(latValue);
           allLon.push(lonValue);
-          text.push(rowIdCol ? String(row[rowIdCol] ?? '') : `Linha ${result.rowIndices[i] + 2}`);
+          text.push(
+            rowIdCol
+              ? getRowIdentifierValue(row, rowIdCol, 'Não informado')
+              : `Linha ${result.rowIndices[i] + 2}`
+          );
         });
         traces.push({
           type: 'scattergeo',
@@ -3675,10 +3706,15 @@
   }
 
   function renderMunicipalityChoropleth(result, nameCol, ufCol, codeCol) {
-    const assignments = new Map();
+    const visibleAssignments = new Map();
+    const allResultAssignments = new Map();
+    const workbookMunicipalityIds = new Set();
+
     let matchedByNameUf = 0;
     let matchedByName = 0;
     let matchedByCode = 0;
+    let matchedByAutomaticName = 0;
+    let matchedByAlternativeCode = 0;
     let ambiguous = 0;
     let ufMismatch = 0;
     let notFound = 0;
@@ -3687,56 +3723,160 @@
     let codeEmpty = 0;
     const unmatchedSamples = [];
 
+    // Municípios existentes na planilha importada, mesmo que alguma linha
+    // tenha sido removida por tratamento estatístico ou valor ausente.
+    state.rows.forEach(row => {
+      const match = matchMunicipality(
+        row,
+        nameCol,
+        ufCol,
+        codeCol
+      );
+      if (match.id) {
+        workbookMunicipalityIds.add(String(match.id));
+      }
+    });
+
+    // Municípios que efetivamente participaram do tratamento ativo,
+    // independentemente dos filtros visuais.
+    result.rowIndices.forEach((sourceIndex, resultIndex) => {
+      const row = state.rows[sourceIndex];
+      const match = matchMunicipality(
+        row,
+        nameCol,
+        ufCol,
+        codeCol
+      );
+
+      if (!match.id) return;
+
+      const id = String(match.id);
+      if (!allResultAssignments.has(id)) {
+        allResultAssignments.set(id, {
+          cluster: result.labels[resultIndex],
+          resultIndex,
+          sourceIndex
+        });
+      }
+    });
+
     const filterState = getLinkedFilterState(result);
 
+    // Municípios atualmente visíveis, considerando filtros da tabela
+    // e clusters ativados.
     filterState.indices.forEach(i => {
       const cluster = result.labels[i];
       const row = state.rows[result.rowIndices[i]];
 
       if (codeCol) {
-        const codeValue = row[codeCol];
-        if (codeValue === null || codeValue === undefined || String(codeValue).trim() === '') codeEmpty++;
+        const usableCode =
+          getUsableMunicipalityCode(row, codeCol);
+        if (!usableCode.digits) codeEmpty++;
       }
 
-      const match = matchMunicipality(row, nameCol, ufCol, codeCol);
+      const match = matchMunicipality(
+        row,
+        nameCol,
+        ufCol,
+        codeCol
+      );
+
       if (!match.id) {
         if (match.method === 'ambiguous') ambiguous++;
         else if (match.method === 'uf_mismatch') ufMismatch++;
         else notFound++;
+
         if (unmatchedSamples.length < 3) {
-          const nameValue = nameCol ? String(row[nameCol] ?? '').trim() : '';
-          const codeValue = codeCol ? String(row[codeCol] ?? '').trim() : '';
-          const sample = [nameValue, codeValue ? `cód. ${codeValue}` : ''].filter(Boolean).join(' / ');
+          const effectiveNameCol =
+            match.nameColumn
+            || getEffectiveMunicipalityNameColumn(nameCol);
+          const nameValue = effectiveNameCol
+            ? String(
+                getImportedRowValue(row, effectiveNameCol)
+                ?? ''
+              ).trim()
+            : '';
+          const usableCode = codeCol
+            ? getUsableMunicipalityCode(row, codeCol)
+            : { value: null };
+          const codeValue =
+            usableCode.value === null
+            || usableCode.value === undefined
+              ? ''
+              : String(usableCode.value).trim();
+          const sample = [
+            nameValue,
+            codeValue ? `cód. ${codeValue}` : ''
+          ].filter(Boolean).join(' / ');
           if (sample) unmatchedSamples.push(sample);
         }
         return;
       }
 
-      if (match.method === 'name_uf') matchedByNameUf++;
-      else if (match.method === 'name') matchedByName++;
-      else if (match.method === 'code') matchedByCode++;
+      if (match.method === 'name_uf') {
+        matchedByNameUf++;
+      } else if (match.method === 'name') {
+        matchedByName++;
+      } else if (match.method === 'code') {
+        matchedByCode++;
+      } else if (
+        match.method === 'name_uf_auto'
+        || match.method === 'name_auto'
+      ) {
+        matchedByAutomaticName++;
+      } else if (match.method === 'code_fallback') {
+        matchedByAlternativeCode++;
+      }
 
-      if (assignments.has(match.id)) {
+      const id = String(match.id);
+
+      if (visibleAssignments.has(id)) {
         duplicateRows++;
-        if (assignments.get(match.id).cluster !== cluster) conflictingRows++;
+        if (
+          visibleAssignments.get(id).cluster !== cluster
+        ) {
+          conflictingRows++;
+        }
         return;
       }
 
-      assignments.set(match.id, {
+      visibleAssignments.set(id, {
         cluster,
-        sourceName: nameCol ? String(row[nameCol] ?? '') : '',
+        sourceName: match.nameColumn
+          ? String(
+              getImportedRowValue(row, match.nameColumn)
+              ?? ''
+            )
+          : '',
         rowNumber: result.rowIndices[i] + 2
       });
     });
 
-    const clusterFeatures = Array.from({ length: result.requestedK }, () => []);
+    const clusterFeatures =
+      Array.from(
+        { length: result.requestedK },
+        () => []
+      );
+    const filteredFeatures = [];
+    const outsideTreatmentFeatures = [];
     const noDataFeatures = [];
 
     state.geojson.features.forEach(feature => {
       const id = String(feature.id);
-      const assignment = assignments.get(id);
-      if (assignment) clusterFeatures[assignment.cluster].push(feature);
-      else noDataFeatures.push(feature);
+      const visibleAssignment =
+        visibleAssignments.get(id);
+
+      if (visibleAssignment) {
+        clusterFeatures[
+          visibleAssignment.cluster
+        ].push(feature);
+      } else if (allResultAssignments.has(id)) {
+        filteredFeatures.push(feature);
+      } else if (workbookMunicipalityIds.has(id)) {
+        outsideTreatmentFeatures.push(feature);
+      } else {
+        noDataFeatures.push(feature);
+      }
     });
 
     const traces = [];
@@ -3745,11 +3885,16 @@
       type: 'choropleth',
       geojson: state.geojson,
       featureidkey: 'id',
-      locations: state.geojson.features.map(feature => String(feature.id)),
+      locations: state.geojson.features.map(
+        feature => String(feature.id)
+      ),
       z: state.geojson.features.map(() => 1),
       zmin: 0,
       zmax: 1,
-      colorscale: [[0, 'rgba(255,255,255,0.01)'], [1, 'rgba(255,255,255,0.01)']],
+      colorscale: [
+        [0, 'rgba(255,255,255,0.01)'],
+        [1, 'rgba(255,255,255,0.01)']
+      ],
       showscale: false,
       showlegend: false,
       hoverinfo: 'skip',
@@ -3764,25 +3909,38 @@
     clusterFeatures.forEach((features, cluster) => {
       if (!features.length) return;
 
-      const color = COLORS[cluster % COLORS.length];
+      const color =
+        COLORS[cluster % COLORS.length];
       const locations = [];
       const text = [];
       const customdata = [];
 
       features.forEach(feature => {
-        const properties = feature.properties || {};
-        const municipalityName = properties.__app_name || 'Município';
+        const properties =
+          feature.properties || {};
+        const municipalityName =
+          properties.__app_name || 'Município';
         const uf = properties.__app_uf || '';
         const code = properties.__app_code || '';
 
         locations.push(String(feature.id));
-        text.push(uf ? `${municipalityName} - ${uf}` : municipalityName);
-        customdata.push([`Cluster C${cluster}`, code || 'Não informado']);
+        text.push(
+          uf
+            ? `${municipalityName} - ${uf}`
+            : municipalityName
+        );
+        customdata.push([
+          `Cluster C${cluster}`,
+          code || 'Não informado'
+        ]);
       });
 
       traces.push({
         type: 'choropleth',
-        geojson: { type: 'FeatureCollection', features },
+        geojson: {
+          type: 'FeatureCollection',
+          features
+        },
         featureidkey: 'id',
         locations,
         z: locations.map(() => 1),
@@ -3812,35 +3970,53 @@
       });
     });
 
-    if (noDataFeatures.length) {
-      const noDataLocations = [];
-      const noDataText = [];
-      const noDataCustom = [];
+    function addStatusTrace(
+      features,
+      color,
+      label
+    ) {
+      if (!features.length) return;
 
-      noDataFeatures.forEach(feature => {
-        const properties = feature.properties || {};
-        const municipalityName = properties.__app_name || 'Município';
+      const locations = [];
+      const text = [];
+      const customdata = [];
+
+      features.forEach(feature => {
+        const properties =
+          feature.properties || {};
+        const municipalityName =
+          properties.__app_name || 'Município';
         const uf = properties.__app_uf || '';
         const code = properties.__app_code || '';
 
-        noDataLocations.push(String(feature.id));
-        noDataText.push(uf ? `${municipalityName} - ${uf}` : municipalityName);
-        noDataCustom.push(['Sem dados', code || 'Não informado']);
+        locations.push(String(feature.id));
+        text.push(
+          uf
+            ? `${municipalityName} - ${uf}`
+            : municipalityName
+        );
+        customdata.push([
+          label,
+          code || 'Não informado'
+        ]);
       });
 
       traces.push({
         type: 'choropleth',
-        geojson: { type: 'FeatureCollection', features: noDataFeatures },
+        geojson: {
+          type: 'FeatureCollection',
+          features
+        },
         featureidkey: 'id',
-        locations: noDataLocations,
-        z: noDataLocations.map(() => 1),
-        text: noDataText,
-        customdata: noDataCustom,
+        locations,
+        z: locations.map(() => 1),
+        text,
+        customdata,
         zmin: 0,
         zmax: 1,
         colorscale: [
-          [0, MAP_NO_DATA_COLOR],
-          [1, MAP_NO_DATA_COLOR]
+          [0, color],
+          [1, color]
         ],
         showscale: false,
         showlegend: false,
@@ -3852,20 +4028,63 @@
         },
         hovertemplate:
           '<b>%{text}</b>' +
-          '<br>Sem dados' +
+          '<br>%{customdata[0]}' +
           '<br>Código IBGE: %{customdata[1]}' +
           '<extra></extra>'
       });
     }
 
+    addStatusTrace(
+      filteredFeatures,
+      MAP_FILTERED_COLOR,
+      'Ocultado por filtro ou cluster desativado'
+    );
+    addStatusTrace(
+      outsideTreatmentFeatures,
+      MAP_OUTSIDE_TREATMENT_COLOR,
+      'Fora do tratamento ativo'
+    );
+    addStatusTrace(
+      noDataFeatures,
+      MAP_NO_DATA_COLOR,
+      'Sem dados na planilha'
+    );
+
     const legendItems = [
-      ...Array.from({ length: result.requestedK }, (_, cluster) => ({
-        label: `C${cluster}`,
-        color: COLORS[cluster % COLORS.length],
-        active: isClusterActive(cluster)
-      })).filter(item => item.active),
-      { label: 'Sem dados', color: MAP_NO_DATA_COLOR, active: true, noData: true }
-    ];    const legend = buildMapLegend(legendItems);
+      ...Array.from(
+        { length: result.requestedK },
+        (_, cluster) => ({
+          label: `C${cluster}`,
+          color: COLORS[cluster % COLORS.length],
+          active: isClusterActive(cluster)
+        })
+      ).filter(item => item.active)
+    ];
+
+    if (filteredFeatures.length) {
+      legendItems.push({
+        label: 'Ocultado',
+        color: MAP_FILTERED_COLOR,
+        active: true
+      });
+    }
+    if (outsideTreatmentFeatures.length) {
+      legendItems.push({
+        label: 'Fora do tratamento',
+        color: MAP_OUTSIDE_TREATMENT_COLOR,
+        active: true
+      });
+    }
+    if (noDataFeatures.length) {
+      legendItems.push({
+        label: 'Sem dados',
+        color: MAP_NO_DATA_COLOR,
+        active: true,
+        noData: true
+      });
+    }
+
+    const legend = buildMapLegend(legendItems);
 
     Plotly.react('mapChart', traces, {
       margin: { l: 6, r: 6, t: 10, b: 10 },
@@ -3876,7 +4095,13 @@
       geo: {
         domain: {
           x: [0, 1],
-          y: [0, Math.max(0.55, 1 - legend.reservedTopSpace)]
+          y: [
+            0,
+            Math.max(
+              0.55,
+              1 - legend.reservedTopSpace
+            )
+          ]
         },
         visible: false,
         projection: { type: 'mercator' },
@@ -3891,36 +4116,98 @@
       }
     }, PLOT_CONFIG);
 
-    const matched = assignments.size;
+    const matched = visibleAssignments.size;
     const totalRows = filterState.indices.length;
-    const codeColumnEmpty = Boolean(codeCol) && totalRows > 0 && codeEmpty === totalRows;
     const details = [];
 
-    if (!matched && codeColumnEmpty && !nameCol) {
-      // Caso comum: a coluna de código foi selecionada, mas está sem valores.
-      // Sem este aviso, o usuário via apenas "nomes não encontrados" e um mapa cinza.
-      details.push(`nenhum município associado: a coluna de código selecionada ("${codeCol}") está vazia em todas as ${totalRows.toLocaleString('pt-BR')} linhas — selecione a coluna com o nome do município ou preencha os códigos IBGE na planilha`);
-    } else {
-      details.push(`${matched.toLocaleString('pt-BR')} municípios associados`);
+    details.push(
+      `${matched.toLocaleString('pt-BR')} municípios exibidos nos clusters`
+    );
+    details.push(
+      `${allResultAssignments.size.toLocaleString('pt-BR')} municípios participaram do tratamento ativo`
+    );
+    details.push(
+      `${workbookMunicipalityIds.size.toLocaleString('pt-BR')} municípios reconhecidos na planilha`
+    );
+
+    if (filteredFeatures.length) {
+      details.push(
+        `${filteredFeatures.length.toLocaleString('pt-BR')} ocultados por filtros ou clusters desativados`
+      );
     }
-    if (matchedByNameUf) details.push(`${matchedByNameUf.toLocaleString('pt-BR')} por nome e UF`);
-    if (matchedByName) details.push(`${matchedByName.toLocaleString('pt-BR')} por nome único`);
-    if (matchedByCode) details.push(`${matchedByCode.toLocaleString('pt-BR')} pelo código IBGE`);
-    if (ambiguous) details.push(`${ambiguous.toLocaleString('pt-BR')} nomes ambíguos entre UFs (selecione a coluna da UF ou preencha o código IBGE para diferenciá-los)`);
-    if (ufMismatch) details.push(`${ufMismatch.toLocaleString('pt-BR')} nomes cuja UF informada não confere com a malha`);
-    if (notFound) details.push(`${notFound.toLocaleString('pt-BR')} linhas sem correspondência por nome ou código`);
-    if (codeCol && codeEmpty && !(codeColumnEmpty && !nameCol && !matched)) {
-      details.push(`coluna de código "${codeCol}" vazia em ${codeEmpty.toLocaleString('pt-BR')} de ${totalRows.toLocaleString('pt-BR')} linhas`);
+    if (outsideTreatmentFeatures.length) {
+      details.push(
+        `${outsideTreatmentFeatures.length.toLocaleString('pt-BR')} fora do tratamento ativo`
+      );
+    }
+    if (noDataFeatures.length) {
+      details.push(
+        `${noDataFeatures.length.toLocaleString('pt-BR')} sem dados na planilha`
+      );
+    }
+    if (matchedByNameUf) {
+      details.push(
+        `${matchedByNameUf.toLocaleString('pt-BR')} associados por nome e UF`
+      );
+    }
+    if (matchedByName) {
+      details.push(
+        `${matchedByName.toLocaleString('pt-BR')} associados por nome único`
+      );
+    }
+    if (matchedByCode) {
+      details.push(
+        `${matchedByCode.toLocaleString('pt-BR')} associados pelo código IBGE selecionado`
+      );
+    }
+    if (matchedByAlternativeCode) {
+      details.push(
+        `${matchedByAlternativeCode.toLocaleString('pt-BR')} associados por outra coluna de código detectada`
+      );
+    }
+    if (matchedByAutomaticName) {
+      details.push(
+        `${matchedByAutomaticName.toLocaleString('pt-BR')} associados pelo nome detectado automaticamente`
+      );
+    }
+    if (ambiguous) {
+      details.push(
+        `${ambiguous.toLocaleString('pt-BR')} nomes ambíguos entre UFs`
+      );
+    }
+    if (ufMismatch) {
+      details.push(
+        `${ufMismatch.toLocaleString('pt-BR')} nomes com UF divergente`
+      );
+    }
+    if (notFound) {
+      details.push(
+        `${notFound.toLocaleString('pt-BR')} linhas visíveis sem correspondência`
+      );
+    }
+    if (codeCol && codeEmpty) {
+      details.push(
+        `${codeEmpty.toLocaleString('pt-BR')} linhas visíveis sem código utilizável`
+      );
     }
     if (!matched && unmatchedSamples.length) {
-      details.push(`exemplos sem correspondência: ${unmatchedSamples.join(' · ')}`);
+      details.push(
+        `exemplos sem correspondência: ${unmatchedSamples.join(' · ')}`
+      );
     }
-    if (duplicateRows) details.push(`${duplicateRows.toLocaleString('pt-BR')} linhas municipais repetidas`);
-    if (conflictingRows) details.push(`${conflictingRows.toLocaleString('pt-BR')} repetições com clusters conflitantes`);
-    details.push(`${filterState.indices.length.toLocaleString('pt-BR')} linhas atendem aos filtros da tabela`);
-    details.push(`${state.activeClusters.size} de ${result.requestedK} clusters visíveis`);
-    details.push('municípios ausentes, removidos ou excluídos pelos filtros aparecem em cinza');
-    mapStats.textContent = details.join('; ') + '.';
+    if (duplicateRows) {
+      details.push(
+        `${duplicateRows.toLocaleString('pt-BR')} linhas municipais repetidas`
+      );
+    }
+    if (conflictingRows) {
+      details.push(
+        `${conflictingRows.toLocaleString('pt-BR')} repetições com clusters conflitantes`
+      );
+    }
+
+    mapStats.textContent =
+      details.join('; ') + '.';
   }
 
   function buildMapLegend(items) {
@@ -4006,9 +4293,15 @@
       `Compatibilidade reproduzida: inicialização k-means++ greedy, uma execução por valor de k, semente ${parseInt(el('seed').value, 10) || 790}, máximo de ${FINAL_MAX_ITER} iterações e tolerância ${KMEANS_TOLERANCE}. O mesmo ajuste em k=${result.requestedK} alimenta o cartão, os gráficos, a tabela e o mapa.`
     );
 
-    notes.push(
-      `Toda a curva Silhouette é exata e calculada sobre a base completa, com ${result.validRows.toLocaleString('pt-BR')} observações. Não há amostragem nem correção posterior da curva.`
-    );
+    if (result.diagnostics.silhouetteMode === 'exact_curve') {
+      notes.push(
+        `A curva Silhouette foi calculada de forma exata sobre a base completa, com ${result.validRows.toLocaleString('pt-BR')} observações.`
+      );
+    } else {
+      notes.push(
+        `A curva Silhouette foi estimada por amostra estratificada de até ${SILHOUETTE_SAMPLE_SIZE.toLocaleString('pt-BR')} observações por valor de k. Para reproduzir os resultados do sistema do professor, mantenha marcada a opção Curva silhouette exata.`
+      );
+    }
 
     notes.push(
       `Os identificadores C0, C1, C2 e seguintes são ordenados pelo ranking médio dos centroides normalizados, do maior escore para o menor, reproduzindo a numeração dos arquivos exportados pelo Visual Clustering.`
@@ -4269,12 +4562,191 @@
     return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[_-]+/g, ' ').trim();
   }
 
+  function isEmptyCellValue(value) {
+    return value === null || value === undefined || String(value).trim() === '';
+  }
+
+  function getImportedRowValue(row, column) {
+    if (!row || !column) return null;
+
+    // Primeiro tenta o nome exato usado pelo SheetJS.
+    if (Object.prototype.hasOwnProperty.call(row, column)) {
+      const exactValue = row[column];
+      if (!isEmptyCellValue(exactValue)) return exactValue;
+    }
+
+    // Corrige diferenças invisíveis no cabeçalho, como espaços extras,
+    // acentos, hífens, sublinhados e caracteres não separáveis.
+    const target = normalizeText(column).replace(/\s+/g, ' ');
+    const keys = Object.keys(row);
+
+    const normalizedMatch = keys.find(key =>
+      normalizeText(key).replace(/\s+/g, ' ') === target
+    );
+
+    if (normalizedMatch) {
+      const matchedValue = row[normalizedMatch];
+      if (!isEmptyCellValue(matchedValue)) return matchedValue;
+    }
+
+    // Quando a seleção representa um código IBGE, procura também aliases
+    // comuns, por exemplo "Código IBGE" e "Código Município IBGE".
+    const targetLooksLikeCode =
+      /\b(codigo|cod)\b/.test(target)
+      && /\b(ibge|municipio|municipal)\b/.test(target);
+
+    if (targetLooksLikeCode) {
+      const aliasKey = keys.find(key => {
+        const normalizedKey = normalizeText(key).replace(/\s+/g, ' ');
+        return (
+          /\b(codigo|cod)\b/.test(normalizedKey)
+          && /\b(ibge|municipio|municipal)\b/.test(normalizedKey)
+          && !isEmptyCellValue(row[key])
+        );
+      });
+
+      if (aliasKey) return row[aliasKey];
+    }
+
+    return null;
+  }
+
+  function formatImportedIdentifier(value, column) {
+    if (isEmptyCellValue(value)) return '';
+
+    const normalizedColumn = normalizeText(column);
+    const looksLikeIbgeCode =
+      /\b(codigo|cod)\b/.test(normalizedColumn)
+      && /\b(ibge|municipio|municipal)\b/.test(normalizedColumn);
+
+    if (looksLikeIbgeCode) {
+      const digits = normalizeCode(value);
+      return digits || String(value).trim();
+    }
+
+    return String(value).trim();
+  }
+
+  function isMunicipalityCodeColumn(column) {
+    const normalized = normalizeText(column).replace(/\s+/g, ' ');
+    return (
+      /\b(codigo|cod|geocodigo|geocod)\b/.test(normalized)
+      && /\b(ibge|municipio|municipal)\b/.test(normalized)
+    ) || /^ibge$/.test(normalized);
+  }
+
+  function isMunicipalityNameColumn(column) {
+    const normalized = normalizeText(column).replace(/\s+/g, ' ');
+    if (!normalized || isMunicipalityCodeColumn(column)) return false;
+    return (
+      /^municipio$/.test(normalized)
+      || /\bmunicipio\b/.test(normalized)
+      || /^cidade$/.test(normalized)
+      || /nome.*municip/.test(normalized)
+    );
+  }
+
+  function getUsableMunicipalityCode(row, preferredColumn) {
+    const candidates = [];
+
+    if (preferredColumn) candidates.push(preferredColumn);
+
+    state.columns.forEach(column => {
+      if (
+        isMunicipalityCodeColumn(column)
+        && !candidates.includes(column)
+      ) {
+        candidates.push(column);
+      }
+    });
+
+    for (const column of candidates) {
+      const value = getImportedRowValue(row, column);
+      const digits = normalizeCode(value);
+
+      if (digits.length >= 6) {
+        return {
+          value,
+          digits,
+          column,
+          fallback: Boolean(
+            preferredColumn && column !== preferredColumn
+          )
+        };
+      }
+    }
+
+    return {
+      value: null,
+      digits: '',
+      column: preferredColumn || '',
+      fallback: false
+    };
+  }
+
+  function getEffectiveMunicipalityNameColumn(preferredColumn = '') {
+    if (preferredColumn) return preferredColumn;
+
+    const identifierColumn = rowIdentifierColumn.value;
+    if (
+      identifierColumn
+      && isMunicipalityNameColumn(identifierColumn)
+    ) {
+      return identifierColumn;
+    }
+
+    return state.columns.find(isMunicipalityNameColumn) || '';
+  }
+
+  function getRowIdentifierValue(row, selectedColumn, fallback = '') {
+    if (!selectedColumn) return fallback;
+
+    let value = getImportedRowValue(row, selectedColumn);
+
+    // Se a coluna escolhida for um código e estiver vazia por divergência
+    // de cabeçalho, tenta a coluna definida no campo Código IBGE opcional.
+    const normalizedSelected = normalizeText(selectedColumn);
+    const selectedLooksLikeCode =
+      /\b(codigo|cod)\b/.test(normalizedSelected)
+      && /\b(ibge|municipio|municipal)\b/.test(normalizedSelected);
+
+    if (isEmptyCellValue(value) && selectedLooksLikeCode && codeColumn.value) {
+      value = getImportedRowValue(row, codeColumn.value);
+    }
+
+    // Última tentativa: procura automaticamente uma coluna de código na linha.
+    if (isEmptyCellValue(value) && selectedLooksLikeCode) {
+      const automaticCodeColumn = state.columns.find(column => {
+        const normalizedColumn = normalizeText(column);
+        return (
+          /\b(codigo|cod)\b/.test(normalizedColumn)
+          && /\b(ibge|municipio|municipal)\b/.test(normalizedColumn)
+        );
+      });
+
+      if (automaticCodeColumn) {
+        value = getImportedRowValue(row, automaticCodeColumn);
+      }
+    }
+
+    const formatted = formatImportedIdentifier(value, selectedColumn);
+    return formatted || fallback;
+  }
+
   function normalizeCode(value) {
     if (value === null || value === undefined) return '';
     if (typeof value === 'number' && Number.isFinite(value)) return String(Math.trunc(value));
     // Remove um eventual decimal residual ("3303302.0") e depois tudo que não
     // for dígito, aceitando códigos com pontos, espaços ou texto ao redor.
     return String(value).trim().replace(/[.,]0+$/, '').replace(/\D+/g, '');
+  }
+
+  function ufFromIbgeCode(value) {
+    const digits = normalizeCode(value);
+    if (digits.length < 2) return '';
+
+    const ufCode = Number(digits.slice(0, 2));
+    return UF_CODE_TO_SIGLA[ufCode] || '';
   }
 
 
